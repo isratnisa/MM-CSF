@@ -175,15 +175,23 @@ int main(int argc, char* argv[]){
     else // e.g. -1 
         cout << "no MTTKRP" << endl;
 
-    if(!Opt.outFileName.empty() || Opt.correctness)
+    if(!Opt.outFileName.empty())
         write_output(U, X.modeOrder[0], Opt.outFileName);
 
     if(Opt.correctness){
-        Opt.outFileName = "nell2_tmp";
-        string seqFileName = "files/nell2_seq";
-        // MTTKRP_COO_CPU(X, U, Opt);
-        // write_output(U, X.modeOrder[0], seqFileName);
-        correctness_check(U, X.modeOrder[0], Opt.outFileName, seqFileName);
+        if (Opt.impType == 1) {
+            cout << "Already running COO seq on CPU!" << endl; 
+            exit(0);
+        }
+        int mode = Opt.mode;
+        int nr = U[mode].nRows;  
+        int nc = U[mode].nCols;
+        DTYPE *out = (DTYPE*)malloc(nr * nc * sizeof(DTYPE));
+        memcpy(out, U[mode].vals, nr*nc * sizeof(DTYPE));
+        zero_mat(X, U, Opt.mode);
+
+        MTTKRP_HCSR_CPU(X, U, Opt);
+        correctness_check(out, U[mode].vals, nr, nc);
     }
 }
 

@@ -12,7 +12,7 @@ int MTTKRP_COO_CPU(const Tensor &X, Matrix *U, const Options &Opt){
     
     for(ITYPE x=0; x<X.nnz; ++x) {
 
-        float tmp_val = 0;
+        DTYPE tmp_val = 0;
         ITYPE idx0 = X.inds[mode0][x];
         ITYPE idx1 = X.inds[mode1][x];
         ITYPE idx2 = X.inds[mode2][x];
@@ -33,20 +33,20 @@ int MTTKRP_HCSR_CPU(const Tensor &X, Matrix *U, const Options &Opt){
     ITYPE R = Opt.R;
 
      // MTTKRP_HCSR_CPU_RSTRCT(const Tensor &X, U[], const Options &Opt)
-    float * U0 = U[mode0].vals;
-    float const * const  U1 = U[mode1].vals;
-    float const * const  U2 = U[mode2].vals;
+    DTYPE * U0 = U[mode0].vals;
+    DTYPE const * const  U1 = U[mode1].vals;
+    DTYPE const * const  U2 = U[mode2].vals;
 
     // ITYPE const * const __restrict__ arrIdx2 = &(X.inds[mode2][0]);
   
     // #pragma omp parallel
     {    
-        float *tmp_val = new float[R];
-        float *outBuffer = new float[R];
+        DTYPE *tmp_val = new DTYPE[R];
+        DTYPE *outBuffer = new DTYPE[R];
 
         // #pragma omp for
         for(ITYPE slc = 0; slc < X.sliceIdx.size(); ++slc) {
-            memset(outBuffer, 0, R * sizeof(float));
+            memset(outBuffer, 0, R * sizeof(DTYPE));
 
             ITYPE idx0 = X.sliceIdx[slc];
             const int fb_st = X.slicePtr[slc];
@@ -87,20 +87,20 @@ int MTTKRP_HYB_HCSR_CPU(HYBTensor &X, Matrix *U, Options &Opt){
     ITYPE R = Opt.R;
 
      // MTTKRP_HCSR_CPU_RSTRCT(const Tensor &X, U[], const Options &Opt)
-    float * U0 = U[mode0].vals;
-    float const * const  U1 = U[mode1].vals;
-    float const * const  U2 = U[mode2].vals;
+    DTYPE * U0 = U[mode0].vals;
+    DTYPE const * const  U1 = U[mode1].vals;
+    DTYPE const * const  U2 = U[mode2].vals;
 
     // ITYPE const * const __restrict__ arrIdx2 = &(X.inds[mode2][0]);
   
     // #pragma omp parallel
     {    
-        float *tmp_val = new float[R];
-        float *outBuffer = new float[R];
+        DTYPE *tmp_val = new DTYPE[R];
+        DTYPE *outBuffer = new DTYPE[R];
 
         // #pragma omp for
         for(ITYPE slc = 0; slc < X.sliceIdx.size(); ++slc) {
-            memset(outBuffer, 0, R * sizeof(float));
+            memset(outBuffer, 0, R * sizeof(DTYPE));
 
             ITYPE idx0 = X.sliceIdx[slc];
             const int fb_st = X.slicePtr[slc];
@@ -148,7 +148,7 @@ int MTTKRP_HYB_CSL_CPU( HYBTensor &HybX, Matrix *U, Options &Opt){
         
         for (int fbr = fb_st; fbr < fb_end; ++fbr){
 
-            float tmp_val = 0;
+            DTYPE tmp_val = 0;
             ITYPE idx1 = HybX.CSLinds[mode1][fbr];
             ITYPE idx2 = HybX.CSLinds[mode2][fbr];    
            
@@ -172,7 +172,7 @@ int MTTKRP_HYB_CPU( HYBTensor &HybX, Matrix *U, Options &Opt){
     // COO PART
     for(ITYPE x = 0; x < HybX.COOnnz; ++x) {
 
-        float tmp_val = 0;
+        DTYPE tmp_val = 0;
         ITYPE idx0 = HybX.COOinds[mode0][x];
         ITYPE idx1 = HybX.COOinds[mode1][x];
         ITYPE idx2 = HybX.COOinds[mode2][x];
@@ -204,7 +204,7 @@ int MTTKRP_TILED_COO_CPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
     {
         for(ITYPE x=0; x<TiledX[tile].nnz; ++x) {
 
-            float tmp_val = 0;
+            DTYPE tmp_val = 0;
             ITYPE idx0 = TiledX[tile].inds[mode0][x];
             ITYPE idx1 = TiledX[tile].inds[mode1][x];
             ITYPE idx2 = TiledX[tile].inds[mode2][x];
@@ -230,12 +230,12 @@ int MTTKRP_TILED_HCSR_CPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 
         #pragma omp parallel
         {
-            float *tmp_val = new float[R];
-            float *outBuffer = new float[R];
+            DTYPE *tmp_val = new DTYPE[R];
+            DTYPE *outBuffer = new DTYPE[R];
 
             #pragma omp for
             for(ITYPE slc = 0; slc < TiledX[tile].sliceIdx.size(); ++slc) {
-                memset(outBuffer, 0, R * sizeof(float));
+                memset(outBuffer, 0, R * sizeof(DTYPE));
 
                 ITYPE idx0 = TiledX[tile].sliceIdx[slc];
                 int fb_st = TiledX[tile].slicePtr[slc];
@@ -272,7 +272,7 @@ int MTTKRP_TILED_HCSR_CPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 // int MTTKRP_HCSR_CPU_ASR(const Tensor &X, Matrix *U, ITYPE mode, ITYPE R){
         
 //     //std::fill(U[0].vals.begin(), U[0].vals.end(), 0);
-//     // memset(U[0].vals, 0, U[0].nRows * U[0].nCols * sizeof(float));
+//     // memset(U[0].vals, 0, U[0].nRows * U[0].nCols * sizeof(DTYPE));
 
 //     #pragma omp parallel 
 //     {
@@ -282,12 +282,12 @@ int MTTKRP_TILED_HCSR_CPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 //         const vector<ITYPE> & restrict Xinds1 = X.inds[1];
 //         const vector<ITYPE> & restrict Xinds2 = X.inds[2];
 //         const vector<ITYPE> & restrict Xinds3 = X.inds[3];
-//         float tmp_val[R] ;
+//         DTYPE tmp_val[R] ;
 
 //         #pragma omp for
 //         for(ITYPE slc = 0; slc < X.sliceIdx.size(); ++slc) {
 
-//             // float *tmp_val = new float[R];
+//             // DTYPE *tmp_val = new DTYPE[R];
 //             ITYPE idx0 = X.sliceIdx[slc];
 //             int fb_st = X.slicePtr[slc];
 //             int fb_end = X.slicePtr[slc+1];
