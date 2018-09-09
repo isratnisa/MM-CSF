@@ -668,18 +668,14 @@ inline int make_Bin(HYBTensor &X, const Options & Opt){
 
         int fb_st = X.CSLslicePtr[slc];
         int fb_end = X.CSLslicePtr[slc+1];
-        int nnzSlc = 0;
+        int nnzSlc = fb_end - fb_st; //nnz = nfibers
      
-        nnzSlc = fb_end - fb_st; //nnz = nfibers
-        
-        // cout <<slc << " " << X.CSLsliceIdx[slc] << " " << fb_st <<" " <<  fb_end << endl;
         // #pragma omp parallel
         // {
         // unsigned int cpu_thread_id = omp_get_thread_num();
         // int i = cpu_thread_id;
-        for (int bin = 0; bin < Opt.nBin; ++bin)
-        {
-            // cout << bin << " " << LB[bin] <<" " << UB[bin] << endl;
+        for (int bin = 0; bin < Opt.nBin; ++bin)  {
+            
             if (nnzSlc > LB[bin] && nnzSlc < UB[bin]) {
                 X.CSLslcMapperBin[bin].push_back(slc);
             }

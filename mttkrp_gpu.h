@@ -36,7 +36,8 @@ __global__ void mttkrp_COO_kernel(DTYPE *vals, ITYPE *dInds0, ITYPE *dInds1, ITY
         }    
 	}
 }
-// no // atomics .. CUDA kernel call to do HYB COO MTTKRP 
+
+//no atomics because all 1 in HYB - COO 
 __global__ void mttkrp_HYB_COO_kernel(DTYPE *vals, ITYPE *dInds0, ITYPE *dInds1, ITYPE *dInds2,  ITYPE nnz,
 	DTYPE *dU0, DTYPE *dU1, DTYPE *dU2, ITYPE	mode, ITYPE R){
 
@@ -55,6 +56,39 @@ __global__ void mttkrp_HYB_COO_kernel(DTYPE *vals, ITYPE *dInds0, ITYPE *dInds1,
             tmp_val = vals[x] * dU1[idx1 * R + r] * dU2[idx2 * R + r];
             dU0[idx0 * R + r] += tmp_val;
         }    
+	}
+}
+
+__global__ void mttkrp_CSL_kernel(DTYPE * vals, ITYPE *dSlcInds, ITYPE *dSlcMapperBin, ITYPE *dInds2, ITYPE *slicePtr,
+	ITYPE *dInds1, unsigned int nSlices, DTYPE *dU0, DTYPE * dU1, DTYPE *dU2, 
+	ITYPE mode, ITYPE R, ITYPE warpPerSlice, int logOfWPC, int TbPerSlc, int LogOfTPS){
+
+	unsigned int tId = threadIdx.x;
+	unsigned int laneId = tId & 31;
+	unsigned int gId = (blockIdx.x * blockDim.x + tId);
+	unsigned int workId = (tId & ((1 << (5 + logOfWPC)) - 1)) >> 5;  
+	unsigned int slc = gId >> (5 + logOfWPC); // 5: minimum 1 WARP (2^5) 
+	DTYPE tmp_val;
+		              	              
+	if(slc < nSlices){ 	    
+
+		unsigned int mappedSlc = slc;//dSlcMapperBin[slc];
+		unsigned int idx0 = dSlcInds[mappedSlc]; 
+    	int fb_st = slicePtr[mappedSlc];
+		int fb_end = slicePtr[mappedSlc+1];
+		tmp_val = 0;
+		
+		for (int fbr = fb_st + workId; fbr < fb_end; fbr+=warpPerSlice){
+			
+		    unsigned int idx1 = dInds1[fbr];
+	        unsigned int idx2 = dInds2[fbr];                
+            for(unsigned int r=laneId; r<R; r+=32) {
+                tmp_val += vals[fbr] * dU2[idx2 * R + r] * dU1[idx1 * R + r]; 
+            }   
+		}
+		for(unsigned int r=laneId; r<R; r+=32) {  
+			atomicAdd(&dU0[idx0 * R + r], tmp_val);    
+		}
 	}
 }
 
@@ -90,25 +124,30 @@ __global__ void mttkrp_CSL_kernel_bin(DTYPE * vals, ITYPE *dSlcInds, ITYPE *dSlc
 		}
 	}
 }
-__global__ void mttkrp_CSL_kernel(DTYPE * vals, ITYPE *dSlcInds, ITYPE *dSlcMapperBin, ITYPE *dInds2, ITYPE *slicePtr,
+
+
+// CUDA kernel call to do HCSR MTTKRP 
+__global__ void mttkrp_CSL_kernel_hvyBin(DTYPE * vals, ITYPE *dSlcInds, ITYPE *dSlcMapperBin, ITYPE *dInds2, ITYPE *slicePtr,
 	ITYPE *dInds1, unsigned int nSlices, DTYPE *dU0, DTYPE * dU1, DTYPE *dU2, 
-	ITYPE mode, ITYPE R, ITYPE warpPerSlice, int logOfWPC, int TbPerSlc, int LogOfTPS){
-
-	unsigned int tId = threadIdx.x;
-	unsigned int laneId = tId & 31;
-	unsigned int gId = (blockIdx.x * blockDim.x + tId);
-	unsigned int workId = (tId & ((1 << (5 + logOfWPC)) - 1)) >> 5;  
-	unsigned int slc = gId >> (5 + logOfWPC); // 5: minimum 1 WARP (2^5) 
-	DTYPE tmp_val;
+	ITYPE	mode, ITYPE R, ITYPE warpPerSlice, int logOfWPC, int TbPerSlc, int logOfTPS){
+	
+	unsigned int laneId = threadIdx.x & 31;
+	unsigned int workId = threadIdx.x >> 5;
+	unsigned int slc = blockIdx.x >> logOfTPS;
+	unsigned int localBId = blockIdx.x & (TbPerSlc -1);
+	
+	DTYPE tmp = 0, tmp_val;
 		              	              
-	if(slc < nSlices){ 	    
+	if(slc < nSlices){
 
-		unsigned int mappedSlc = slc;//dSlcMapperBin[slc];
-		unsigned int idx0 = dSlcInds[mappedSlc]; 
-    	int fb_st = slicePtr[mappedSlc];
-		int fb_end = slicePtr[mappedSlc+1];
+		unsigned int mappedSlc = dSlcMapperBin[slc];
+		unsigned int idx0 = dSlcInds[mappedSlc] ;//slc;
+		unsigned int nFbr = slicePtr[mappedSlc+1] - slicePtr[mappedSlc];		
+		unsigned int fbrPerTb = (nFbr + TbPerSlc - 1 ) >> logOfTPS; 
+		unsigned int fb_st = slicePtr[mappedSlc] + localBId * fbrPerTb ;
+		unsigned int fb_end = slicePtr[mappedSlc] + (localBId + 1) * fbrPerTb ;
+
 		tmp_val = 0;
-		
 		for (int fbr = fb_st + workId; fbr < fb_end; fbr+=warpPerSlice){
 			
 		    unsigned int idx1 = dInds1[fbr];
@@ -119,7 +158,7 @@ __global__ void mttkrp_CSL_kernel(DTYPE * vals, ITYPE *dSlcInds, ITYPE *dSlcMapp
 		}
 		for(unsigned int r=laneId; r<R; r+=32) {  
 			atomicAdd(&dU0[idx0 * R + r], tmp_val);    
-		}
+		} 
 	}
 }
 
@@ -244,11 +283,11 @@ __global__ void mttkrp_HCSR_kernel_smllBin(DTYPE * vals, ITYPE *dSlcInds, ITYPE 
 			// __syncthreads();
 
 			//  if(workId == 0){
-   //   //    		for(unsigned int r=laneId; r<R; r+=32) 
-			// 		// dU0[idx0 * R + r] += shared[r];
+   			//  		for(unsigned int r=laneId; r<R; r+=32) 
+			//  //dU0[idx0 * R + r] += shared[r];
 			//  if(laneId == 0)
 			//  	printf("GPU %d %f %f %f\n", mappedSlc, shared[shSlc * R + r], tmp, dU0[idx0 * R + r] );
-   //       	}        
+			// 	}        
 		}
 	}
 }
@@ -845,7 +884,7 @@ int MTTKRP_HYB_GPU(const HYBTensor &HybX, Matrix *U, const Options &Opt){
 
 	dLoc = 0, dSlcLoc = 0, dSlcIdxLoc = 0; dFbrLoc =0;
 
-	for (int bin = 0; bin < Opt.nBin; ++bin)
+	for (int bin = 0; bin < Opt.nBin + 1; ++bin)
 		cudaStreamCreate(&streams[bin]);
 
 
@@ -859,7 +898,8 @@ int MTTKRP_HYB_GPU(const HYBTensor &HybX, Matrix *U, const Options &Opt){
 
 		// CUDA call
 		checkCuda(cudaEventRecord(start), __LINE__);
-		mttkrp_COO_kernel<<<grid, block, 0, 0>>>(dCOOVals, dCOOInds0, dCOOInds1, dCOOInds2, HybX.COOnnz, dU0, dU1, dU2,
+
+		mttkrp_HYB_COO_kernel<<<grid, block, 0, 0>>>(dCOOVals, dCOOInds0, dCOOInds1, dCOOInds2, HybX.COOnnz, dU0, dU1, dU2,
 									Opt.mode, Opt.R); 
 		checkCuda(cudaEventRecord(stop), __LINE__);
 	    cudaEventSynchronize(stop);
@@ -875,7 +915,7 @@ int MTTKRP_HYB_GPU(const HYBTensor &HybX, Matrix *U, const Options &Opt){
 
 	if(HybX.CSLnnz > 0){
 
-		int smallBinEndsAt = 10;
+		int smallBinEndsAt = 5;
 		int slcPerTb = 0;
 
 		BLOCKSIZE = 512;
@@ -910,16 +950,35 @@ int MTTKRP_HYB_GPU(const HYBTensor &HybX, Matrix *U, const Options &Opt){
 					warpPerSlice = 16;
 				logOfWarpPerSlice = log2(warpPerSlice);
 				slcPerTb = 16 / warpPerSlice;
-				cout << bin <<" size " << HybX.CSLslcMapperBin[bin].size() << endl;
+
 				dCSLBinLoc += ((bin > 0) ? HybX.CSLslcMapperBin[bin-1].size() : 0);
 
 				grid.x = ( TbPerSlc * warpPerSlice * 32 * HybX.CSLslcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
 
 				if( HybX.CSLslcMapperBin[bin].size() > 0)
-				mttkrp_CSL_kernel_bin<<<grid, block, 0, streams[bin]>>>(dCSLVals, dCSLSlcInds, dCSLSlcMapperBin + dCSLBinLoc, 
+				mttkrp_CSL_kernel_bin<<<grid, block, 0, streams[bin + 1]>>>(dCSLVals, dCSLSlcInds, dCSLSlcMapperBin + dCSLBinLoc, 
 					dCSLInds2, dCSLSlcPtr, dCSLInds1, HybX.CSLslcMapperBin[bin].size(), 
 					dU0, dU1, dU2, Opt.mode, Opt.R, warpPerSlice, logOfWarpPerSlice, TbPerSlc, logOfTPS); 
 			
+			}
+			// Processing heavy bin.. multiple TB per slice
+			else{
+
+				TbPerSlc = 1 << (bin - smallBinEndsAt + 1); // 1st big bin starts with 1 TB 1 << 1 not 1 << 5
+				if(TbPerSlc > 32) TbPerSlc = 32;		
+				logOfTPS = log2(TbPerSlc);
+
+				warpPerSlice = 16;
+				logOfWarpPerSlice = 4;
+
+				dCSLBinLoc += HybX.CSLslcMapperBin[bin-1].size();
+						
+				grid.x = (TbPerSlc * warpPerSlice * 32 * HybX.CSLslcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
+				
+				mttkrp_CSL_kernel_hvyBin<<<grid, block, 0, streams[bin]>>>(dCSLVals + dLoc, dCSLSlcInds + dSlcIdxLoc, dCSLSlcMapperBin + dSlcIdxLoc + dCSLBinLoc, 
+					dCSLInds2 + dLoc, dCSLSlcPtr + dSlcLoc, dCSLInds1, HybX.CSLslcMapperBin[bin].size(), 
+					dU0, dU1, dU2, Opt.mode, Opt.R, warpPerSlice, logOfWarpPerSlice,  TbPerSlc, logOfTPS); 
+
 			}
 
 		}
