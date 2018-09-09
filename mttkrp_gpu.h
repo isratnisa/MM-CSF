@@ -879,13 +879,15 @@ int MTTKRP_HYB_GPU(const HYBTensor &HybX, Matrix *U, const Options &Opt){
     cudaEvent_t start, stop;
     cudaEventCreate(&start);
     cudaEventCreate(&stop);
-    cudaStream_t streams[Opt.nBin + 1];
+
+    cudaStream_t streams[2 * Opt.nBin + 1];
+	for (int bin = 0; bin < 2 * Opt.nBin + 1; ++bin)
+		cudaStreamCreate(&streams[bin]);
+
     float mili = 0, GPUTime = 0, CPUtimer = 0, HYBTime = 0;
 
 	dLoc = 0, dSlcLoc = 0, dSlcIdxLoc = 0; dFbrLoc =0;
 
-	for (int bin = 0; bin < Opt.nBin + 1; ++bin)
-		cudaStreamCreate(&streams[bin]);
 
 
 	// ******* CUDA COO *******
@@ -915,7 +917,7 @@ int MTTKRP_HYB_GPU(const HYBTensor &HybX, Matrix *U, const Options &Opt){
 
 	if(HybX.CSLnnz > 0){
 
-		int smallBinEndsAt = 5;
+
 		int slcPerTb = 0;
 
 		BLOCKSIZE = 512;
@@ -927,6 +929,7 @@ int MTTKRP_HYB_GPU(const HYBTensor &HybX, Matrix *U, const Options &Opt){
 		mili = 0; 
 		dCSLBinLoc = 0;
 
+		int smallBinEndsAt = 5;
 	    checkCuda(cudaEventRecord(start), __LINE__);
 
 		// mttkrp_CSL_kernel<<<grid, block>>>(dCSLVals, dCSLSlcInds, dSlcMapperBin, dCSLInds2, dCSLSlcPtr, 
@@ -944,10 +947,11 @@ int MTTKRP_HYB_GPU(const HYBTensor &HybX, Matrix *U, const Options &Opt){
 
 				TbPerSlc = 1;
 
-				warpPerSlice = ((bin > 0) ? 2 << (bin) : 1);
+				warpPerSlice = ((bin > 0) ? 2 << (bin - 1) : 1);
 
 				if(warpPerSlice > 16)		
 					warpPerSlice = 16;
+					// warpPerSlice = 2;
 				logOfWarpPerSlice = log2(warpPerSlice);
 				slcPerTb = 16 / warpPerSlice;
 
@@ -963,8 +967,9 @@ int MTTKRP_HYB_GPU(const HYBTensor &HybX, Matrix *U, const Options &Opt){
 			}
 			// Processing heavy bin.. multiple TB per slice
 			else{
-
+		
 				TbPerSlc = 1 << (bin - smallBinEndsAt + 1); // 1st big bin starts with 1 TB 1 << 1 not 1 << 5
+
 				if(TbPerSlc > 32) TbPerSlc = 32;		
 				logOfTPS = log2(TbPerSlc);
 
@@ -975,7 +980,7 @@ int MTTKRP_HYB_GPU(const HYBTensor &HybX, Matrix *U, const Options &Opt){
 						
 				grid.x = (TbPerSlc * warpPerSlice * 32 * HybX.CSLslcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
 				
-				mttkrp_CSL_kernel_hvyBin<<<grid, block, 0, streams[bin]>>>(dCSLVals + dLoc, dCSLSlcInds + dSlcIdxLoc, dCSLSlcMapperBin + dSlcIdxLoc + dCSLBinLoc, 
+				mttkrp_CSL_kernel_hvyBin<<<grid, block, 0, streams[bin+1]>>>(dCSLVals + dLoc, dCSLSlcInds + dSlcIdxLoc, dCSLSlcMapperBin + dSlcIdxLoc + dCSLBinLoc, 
 					dCSLInds2 + dLoc, dCSLSlcPtr + dSlcLoc, dCSLInds1, HybX.CSLslcMapperBin[bin].size(), 
 					dU0, dU1, dU2, Opt.mode, Opt.R, warpPerSlice, logOfWarpPerSlice,  TbPerSlc, logOfTPS); 
 
@@ -1018,7 +1023,7 @@ int MTTKRP_HYB_GPU(const HYBTensor &HybX, Matrix *U, const Options &Opt){
 
 				grid.x = ( 32 * HybX.slcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
 
-				mttkrp_HCSR_kernel_COO<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dSlcInds + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
+				mttkrp_HCSR_kernel_COO<<<grid, block, 0, streams[bin + 11]>>>(dVals + dLoc, dSlcInds + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
 					dInds2 + dLoc, dSlcPtr + dSlcLoc, dFbrPtr + dFbrLoc,  dFbrIdx + dFbrLoc, HybX.slcMapperBin[bin].size(), 
 					dU0, dU1, dU2, Opt.mode, Opt.R, warpPerSlice, logOfWarpPerSlice, TbPerSlc, logOfTPS); 
 			}
@@ -1040,7 +1045,7 @@ int MTTKRP_HYB_GPU(const HYBTensor &HybX, Matrix *U, const Options &Opt){
 
 				grid.x = ( TbPerSlc * warpPerSlice * 32 * HybX.slcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
 
-				mttkrp_HCSR_kernel_smllBin<<<grid, block, shSize , streams[bin]>>>(dVals + dLoc, dSlcInds + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
+				mttkrp_HCSR_kernel_smllBin<<<grid, block, shSize , streams[bin+11]>>>(dVals + dLoc, dSlcInds + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
 					dInds2 + dLoc, dSlcPtr + dSlcLoc, dFbrPtr + dFbrLoc,  dFbrIdx + dFbrLoc, HybX.slcMapperBin[bin].size(), 
 					dU0, dU1, dU2, Opt.mode, Opt.R, warpPerSlice, logOfWarpPerSlice, TbPerSlc, logOfTPS); 
 			}
@@ -1059,7 +1064,7 @@ int MTTKRP_HYB_GPU(const HYBTensor &HybX, Matrix *U, const Options &Opt){
 						
 				grid.x = (TbPerSlc * warpPerSlice * 32 * HybX.slcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
 				
-				mttkrp_HCSR_kernel_hvyBin<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dSlcInds + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
+				mttkrp_HCSR_kernel_hvyBin<<<grid, block, 0, streams[bin+11]>>>(dVals + dLoc, dSlcInds + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
 					dInds2 + dLoc, dSlcPtr + dSlcLoc, dFbrPtr + dFbrLoc,  dFbrIdx + dFbrLoc, HybX.slcMapperBin[bin].size(), 
 					dU0, dU1, dU2, Opt.mode, Opt.R, warpPerSlice, logOfWarpPerSlice,  TbPerSlc, logOfTPS); 
 
