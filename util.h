@@ -23,7 +23,7 @@ class Tensor{
         ITYPE nnz;
         ITYPE nFibers;
         ITYPE *accessK;
-        bool switchBC = false;
+        bool switchBC = false; // if true change matrix rand() to 1
         std::vector<ITYPE> modeOrder;
 		std::vector<vector<ITYPE>> inds;
 		std::vector<DTYPE> vals;
@@ -44,7 +44,6 @@ class HYBTensor{
         ITYPE CSLnnz;
         ITYPE nFibers;
         ITYPE *accessK;
-        bool switchBC = false;
         std::vector<ITYPE> modeOrder;
         std::vector<vector<ITYPE>> inds;
         std::vector<DTYPE> vals;
@@ -80,7 +79,6 @@ class TiledTensor{
         ITYPE nnz;
         ITYPE nFibers;
         ITYPE *accessK;
-        bool switchBC = false;     // if true change matrix rand() to 1
         std::vector<ITYPE> modeOrder;
         std::vector<vector<ITYPE>> inds;
         std::vector<DTYPE> vals;
@@ -96,7 +94,6 @@ class Matrix{
     public:
         ITYPE nRows;
         ITYPE nCols;
-        //vector<DTYPE> vals;
         DTYPE *vals;
 };
 
@@ -159,7 +156,7 @@ inline int load_tensor(Tensor &X, const Options &Opt){
 
 	X.dims = new ITYPE[X.ndims];
 
-	for (int i = 0; i < X.ndims; ++i){
+    for (int i = 0; i < X.ndims; ++i){
         // mode 0 never switches
         if(X.switchBC && i > 0){
             if(i == 1)
@@ -168,9 +165,18 @@ inline int load_tensor(Tensor &X, const Options &Opt){
                 switchMode = 1;
         }
         else
+            switchMode = i;       
+        X.modeOrder.push_back((switchMode + Opt.mode) % X.ndims);
+    }
+
+  
+
+	for (int i = 0; i < X.ndims; ++i){
+        // mode 0 never switches
+
             switchMode = i;
 		fp >> X.dims[switchMode]; 
-        X.modeOrder.push_back((switchMode + Opt.mode) % X.ndims);
+       
 		X.inds.push_back(std::vector<ITYPE>());
 	}
 
@@ -179,13 +185,7 @@ inline int load_tensor(Tensor &X, const Options &Opt){
 		for (int i = 1; i < X.ndims; ++i)
 		{      
 			fp >> index;
-            if(X.switchBC && i > 0 ){
-                if(i == 1)
-                    switchMode = 2;
-                else if(i == 2)
-                    switchMode = 1;
-            }
-            else
+
                 switchMode = i;
 			X.inds[switchMode].push_back(index-1);   
 		}
@@ -276,7 +276,7 @@ inline int print_HCSRtensor(const Tensor &X){
         ITYPE idx0 = X.sliceIdx[slc];
         int fb_st = X.slicePtr[slc];
         int fb_end = X.slicePtr[slc+1];
-        printf("slc st- end: %d %d %d \n", slc, fb_st, fb_end );
+        // printf("slc st- end: %d %d %d \n", slc, fb_st, fb_end );
         
         for (int fbr = fb_st; fbr < fb_end; ++fbr){        
              printf("fbr %d :  ", fbr );    
@@ -417,7 +417,6 @@ inline int create_HCSR(Tensor &X, const Options &Opt){
 
     ITYPE fbrThreashold = Opt.fbrThreashold;
     
-    bool useHYB = true;
     ITYPE sliceId, fiberId;
     ITYPE mode0 = X.modeOrder[0];
     ITYPE mode1 = X.modeOrder[1];
@@ -483,7 +482,7 @@ inline int create_HYB(HYBTensor &HybX, const Tensor &X, const Options &Opt){
     ITYPE mode0 = HybX.modeOrder[0];
     ITYPE mode1 = HybX.modeOrder[1];
     ITYPE mode2 = HybX.modeOrder[2];
-
+    
     for (int i = 0; i < X.ndims; ++i){
         HybX.COOinds.push_back(std::vector<ITYPE>()); 
         HybX.inds.push_back(std::vector<ITYPE>());
@@ -675,11 +674,18 @@ inline int make_Bin(HYBTensor &X, const Options & Opt){
         // unsigned int cpu_thread_id = omp_get_thread_num();
         // int i = cpu_thread_id;
         for (int bin = 0; bin < Opt.nBin; ++bin)  {
-            
+
             if (nnzSlc > LB[bin] && nnzSlc < UB[bin]) {
                 X.CSLslcMapperBin[bin].push_back(slc);
             }
         }
+    }
+
+    if(Opt.verbose){
+        for (int bin = 0; bin < Opt.nBin; ++bin)  
+            cout << "CSL Bin "<<bin << ": " << X.CSLslcMapperBin[bin].size() << endl;
+        for (int bin = 0; bin < Opt.nBin; ++bin)  
+            cout << "HCSR Bin "<<bin << ": " << X.slcMapperBin[bin].size() << endl;
     }
     // debug
 

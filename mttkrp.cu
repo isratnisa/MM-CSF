@@ -17,21 +17,6 @@ int main(int argc, char* argv[]){
 
     Tensor X;
     load_tensor(X, Opt);
-
-    for (int i = 1; i < X.ndims; ++i)
-    {
-        int switchMode;
-
-        if(X.switchBC){
-            if(i == 1)
-                switchMode = 2;
-            else if(i == 2)
-                switchMode = 1;
-        }
-        else
-            switchMode = i;
-    }
-
     // Opt.print();
 
 
@@ -41,12 +26,8 @@ int main(int argc, char* argv[]){
 
     // check if appropriate file is loaded
     string fileNameEndwith;
-    // cout  << "order " <<  X.modeOrder[0] << " " <<
-    // X.modeOrder[1] << " " << X.modeOrder[2] << endl;
-    if(X.switchBC)
-        fileNameEndwith = to_string(X.modeOrder[0]) + to_string(X.modeOrder[2]) + to_string(X.modeOrder[1]);
-    else
-        fileNameEndwith = to_string(X.modeOrder[0]) + to_string(X.modeOrder[1]) + to_string(X.modeOrder[2]);
+
+    fileNameEndwith = to_string(X.modeOrder[0]) ;//+ to_string(X.modeOrder[1]) + to_string(X.modeOrder[2]);
     std::size_t found = Opt.inFileName.find(fileNameEndwith);
     if (found==std::string::npos){
         cout << "Not the correct file for this mode" << endl;
@@ -66,11 +47,9 @@ int main(int argc, char* argv[]){
     if(Opt.impType == 0){
         double t0 = seconds();
         // print_COOtensor(X);
-        //enable it
         create_HCSR(X, Opt);
         tensor_stats(X);
-        //print_HCSRtensor(X);
-        printf("COO CPU - time: %.3f sec \n", seconds() - t0);
+        // print_HCSRtensor(X);
     }
     // COO CPU   
     if(Opt.impType == 1){
@@ -107,7 +86,6 @@ int main(int argc, char* argv[]){
          // print_HCSRtensor(X);
         HYBTensor HybX(X);
         create_HYB(HybX, X, Opt);
-        // make_CSLBin(HybX, Opt);
         make_Bin(HybX, Opt);
         // print_HYBtensor(HybX);
         MTTKRP_HYB_GPU(HybX, U, Opt);

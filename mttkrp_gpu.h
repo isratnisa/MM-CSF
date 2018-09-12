@@ -943,23 +943,25 @@ int MTTKRP_HYB_GPU(const HYBTensor &HybX, Matrix *U, const Options &Opt){
 		
 		for (int bin = 0; bin < Opt.nBin ; ++bin){
 
+			dCSLBinLoc += ((bin > 0) ? HybX.CSLslcMapperBin[bin-1].size() : 0);
+			
+			if( HybX.CSLslcMapperBin[bin].size() == 0)
+				continue;
+			
 			if(bin < smallBinEndsAt){
 
 				TbPerSlc = 1;
 
 				warpPerSlice = ((bin > 0) ? 2 << (bin - 1) : 1);
 
-				if(warpPerSlice > 16)		
-					warpPerSlice = 16;
-					// warpPerSlice = 2;
+				// if(warpPerSlice > 16)		
+				//	warpPerSlice = 16;
+				warpPerSlice = 1;
 				logOfWarpPerSlice = log2(warpPerSlice);
 				slcPerTb = 16 / warpPerSlice;
 
-				dCSLBinLoc += ((bin > 0) ? HybX.CSLslcMapperBin[bin-1].size() : 0);
-
 				grid.x = ( TbPerSlc * warpPerSlice * 32 * HybX.CSLslcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
-
-				if( HybX.CSLslcMapperBin[bin].size() > 0)
+			
 				mttkrp_CSL_kernel_bin<<<grid, block, 0, streams[bin + 1]>>>(dCSLVals, dCSLSlcInds, dCSLSlcMapperBin + dCSLBinLoc, 
 					dCSLInds2, dCSLSlcPtr, dCSLInds1, HybX.CSLslcMapperBin[bin].size(), 
 					dU0, dU1, dU2, Opt.mode, Opt.R, warpPerSlice, logOfWarpPerSlice, TbPerSlc, logOfTPS); 
@@ -975,8 +977,6 @@ int MTTKRP_HYB_GPU(const HYBTensor &HybX, Matrix *U, const Options &Opt){
 
 				warpPerSlice = 16;
 				logOfWarpPerSlice = 4;
-
-				dCSLBinLoc += HybX.CSLslcMapperBin[bin-1].size();
 						
 				grid.x = (TbPerSlc * warpPerSlice * 32 * HybX.CSLslcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
 				
@@ -1014,6 +1014,11 @@ int MTTKRP_HYB_GPU(const HYBTensor &HybX, Matrix *U, const Options &Opt){
 		checkCuda(cudaEventRecord(start), __LINE__);
 		
 		for (int bin = 0; bin < Opt.nBin ; ++bin){
+
+			dBinLoc += ((bin > 0) ? HybX.slcMapperBin[bin-1].size() : 0);
+			
+			if( HybX.slcMapperBin[bin].size() == 0)
+				continue;
 							
 			if(bin == -1){
 
@@ -1041,8 +1046,6 @@ int MTTKRP_HYB_GPU(const HYBTensor &HybX, Matrix *U, const Options &Opt){
 
 				ITYPE shSize = 0;//slcPerTb * 32 * sizeof(DTYPE);
 
-				dBinLoc += ((bin > 0) ? HybX.slcMapperBin[bin-1].size() : 0);
-
 				grid.x = ( TbPerSlc * warpPerSlice * 32 * HybX.slcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
 
 				mttkrp_HCSR_kernel_smllBin<<<grid, block, shSize , streams[bin+11]>>>(dVals + dLoc, dSlcInds + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
@@ -1059,8 +1062,6 @@ int MTTKRP_HYB_GPU(const HYBTensor &HybX, Matrix *U, const Options &Opt){
 
 				warpPerSlice = 16;
 				logOfWarpPerSlice = 4;
-
-				dBinLoc += HybX.slcMapperBin[bin-1].size();
 						
 				grid.x = (TbPerSlc * warpPerSlice * 32 * HybX.slcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
 				
@@ -1083,7 +1084,7 @@ int MTTKRP_HYB_GPU(const HYBTensor &HybX, Matrix *U, const Options &Opt){
 	}
 	cout << "HYB GPU: " << HYBTime << endl;
 
-	for (int bin = 0; bin < Opt.nBin; ++bin)
+	for (int bin = 0; bin < 2 * Opt.nBin + 1; ++bin)
 		cudaStreamDestroy(streams[bin]);
 	// check correctness
 	checkCuda(cudaMemcpy(&U[mode0].vals[0], dU0, U[mode0].nRows * U[mode0].nCols * sizeof(DTYPE), cudaMemcpyDeviceToHost), 0);
