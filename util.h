@@ -20,7 +20,7 @@ class Tensor{
 	public:
 		ITYPE ndims;
 		ITYPE *dims;
-        ITYPE nnz;
+        ITYPE totNnz;
         ITYPE nFibers;
         ITYPE *accessK;
         bool switchBC = false; // if true change matrix rand() to 1
@@ -39,7 +39,8 @@ class HYBTensor{
     public:
         ITYPE ndims;
         ITYPE *dims;
-        ITYPE nnz;
+        ITYPE totNnz;
+        ITYPE HCSRnnz;
         ITYPE COOnnz;
         ITYPE CSLnnz;
         ITYPE nFibers;
@@ -76,7 +77,7 @@ class TiledTensor{
     public:
         ITYPE ndims;
         ITYPE *dims;
-        ITYPE nnz;
+        ITYPE totNnz;
         ITYPE nFibers;
         ITYPE *accessK;
         std::vector<ITYPE> modeOrder;
@@ -193,13 +194,13 @@ inline int load_tensor(Tensor &X, const Options &Opt){
 		X.vals.push_back(vid);
 
 	}
-    X.nnz = X.vals.size();
+    X.totNnz = X.vals.size();
 
-	// for (int i = 0; i < X.nnz; ++i)
+	// for (int i = 0; i < X.totNnz; ++i)
 	// {
 	// 	cout << X.inds[0][i] << " " << X.inds[1][i] << " "<< X.inds[2][i] <<endl;
 	// }
-    //    cout << "nnz " << X.nnz << endl;
+    //    cout << "nnz " << X.totNnz << endl;
     return 0;
 }
 
@@ -209,7 +210,7 @@ inline int compute_accessK(Tensor &X, const Options &Opt){
     X.accessK = new ITYPE[X.dims[mode2]];
     memset(X.accessK, 0, X.dims[mode2] * sizeof(ITYPE));
     
-    for(ITYPE x = 0; x < X.nnz; ++x) {
+    for(ITYPE x = 0; x < X.totNnz; ++x) {
     
        ITYPE idx2 = X.inds[mode2][x];
        X.accessK[idx2]++;
@@ -256,7 +257,7 @@ inline int print_COOtensor(const Tensor &X){
     ITYPE mode1 = X.modeOrder[1];
     ITYPE mode2 = X.modeOrder[2];
 
-    for(ITYPE x = 0; x < X.nnz; ++x) {
+    for(ITYPE x = 0; x < X.totNnz; ++x) {
     
         cout << X.inds[mode0][x] << " " << X.inds[mode1][x] << " " << X.inds[mode2][x] << endl;
 
@@ -384,7 +385,7 @@ inline int make_KTiling(const Tensor &X, TiledTensor *TiledX, const Options &Opt
 
     int tile = 0;
 
-    for (int idx = 0; idx < X.nnz; ++idx){
+    for (int idx = 0; idx < X.totNnz; ++idx){
 
         tile = X.inds[mode2][idx]/Opt.tileSize;
 
@@ -396,7 +397,7 @@ inline int make_KTiling(const Tensor &X, TiledTensor *TiledX, const Options &Opt
     }
 
     for (int tile = 0; tile < Opt.nTile; ++tile){
-        TiledX[tile].nnz = TiledX[tile].vals.size();
+        TiledX[tile].totNnz = TiledX[tile].vals.size();
     }
 
     // Debug
@@ -435,19 +436,19 @@ inline int create_HCSR(Tensor &X, const Options &Opt){
     
     int idx = 1 ;
     
-    while(idx < X.nnz) {
+    while(idx < X.totNnz) {
         
         sliceId = X.inds[mode0][idx];
         fiberId = X.inds[mode1][idx];   
    
         ITYPE fiberNnz = 1;
-        while( fiberId == prevFiberId && sliceId == prevSliceId && idx < X.nnz && fiberNnz < fbrThreashold){
+        while( fiberId == prevFiberId && sliceId == prevSliceId && idx < X.totNnz && fiberNnz < fbrThreashold){
             ++idx;
             fiberNnz++;
             sliceId = X.inds[mode0][idx];
             fiberId = X.inds[mode1][idx];      
         }
-        if(idx == X.nnz)
+        if(idx == X.totNnz)
             break;
         
         X.fiberPtr.push_back(idx);
@@ -548,7 +549,7 @@ inline int create_HYB(HYBTensor &HybX, const Tensor &X, const Options &Opt){
     HybX.nFibers = HybX.fiberPtr.size() - 1;
     HybX.COOnnz = HybX.COOvals.size();
     HybX.CSLnnz = HybX.CSLvals.size();
-    HybX.nnz = HybX.vals.size();
+    HybX.HCSRnnz = HybX.vals.size();
     if(Opt.verbose){
         cout << "slices in COO " <<HybX.COOnnz << endl;
         cout << "slices in CSL " <<HybX.CSLsliceIdx.size() << endl;
@@ -577,19 +578,19 @@ inline int create_TiledHCSR(TiledTensor *TiledX, const Options &Opt , int tile){
     
     int idx = 1 ;
     
-    while(idx < TiledX[tile].nnz) {
+    while(idx < TiledX[tile].totNnz) {
         
         sliceId = TiledX[tile].inds[mode0][idx];
         fiberId = TiledX[tile].inds[mode1][idx];   
    
         ITYPE fiberNnz = 1;
-        while( fiberId == prevFiberId && sliceId == prevSliceId && idx < TiledX[tile].nnz && fiberNnz < fbrThreashold){
+        while( fiberId == prevFiberId && sliceId == prevSliceId && idx < TiledX[tile].totNnz && fiberNnz < fbrThreashold){
             ++idx;
             fiberNnz++;
             sliceId = TiledX[tile].inds[mode0][idx];
             fiberId = TiledX[tile].inds[mode1][idx];           
         }
-        if(idx == TiledX[tile].nnz)
+        if(idx == TiledX[tile].totNnz)
             break;
         TiledX[tile].fiberPtr.push_back(idx);
         TiledX[tile].fiberIdx.push_back(fiberId);
@@ -635,9 +636,9 @@ inline int make_Bin(HYBTensor &X, const Options & Opt){
     LB[6] = 4 * TB;   UB[6] = 8 * TB + 1; // 64 WARP =4 TB
     LB[7] = 8 * TB;   UB[7] = 16 * TB + 1; // 128 WARP =8 TB
     LB[8] = 16 * TB;   UB[8] = 32 * TB + 1;  // 256 WARP = 16 TB
-    LB[9] = 32 * TB ;   UB[9] = X.nnz + 1;  // 512 WARP = 32 TB
+    LB[9] = 32 * TB ;   UB[9] = X.totNnz + 1;  // 512 WARP = 32 TB
 
-    UB[Opt.nBin - 1] = X.nnz + 1;
+    UB[Opt.nBin - 1] = X.totNnz + 1;
     
     // Populate HCSR bin
     for(ITYPE slc = 0; slc < X.sliceIdx.size(); ++slc) {
@@ -726,9 +727,9 @@ inline int make_TiledBin(TiledTensor *TiledX, const Options & Opt, int tile){
     LB[6] = 4 * TB;   UB[6] = 8 * TB + 1; // 64 WARP =4 TB
     LB[7] = 8 * TB;   UB[7] = 16 * TB + 1; // 128 WARP =8 TB
     LB[8] = 16 * TB;   UB[8] = 32 * TB + 1;  // 256 WARP = 16 TB
-    LB[9] = 32 * TB ;   UB[9] = TiledX[tile].nnz + 1;  // 512 WARP = 32 TB
+    LB[9] = 32 * TB ;   UB[9] = TiledX[tile].totNnz + 1;  // 512 WARP = 32 TB
 
-    UB[Opt.nBin - 1] = TiledX[tile].nnz + 1;
+    UB[Opt.nBin - 1] = TiledX[tile].totNnz + 1;
     
     // Populate bin
     for(ITYPE slc = 0; slc < TiledX[tile].sliceIdx.size(); ++slc) {
@@ -776,8 +777,8 @@ inline int tensor_stats(const Tensor &X){
     ITYPE totNnz = 0, flopsSaved = 0, emptySlc = 0;
     ITYPE minSlcNnz = 999999999, maxSlcNnz = 0;
     double stdDev = 0, stdDevFbr = 0;
-    int avgSlcNnz = X.nnz/X.dims[mode0]; // int to use stdDev
-    int avgFbrNnz = X.nnz/X.nFibers;
+    int avgSlcNnz = X.totNnz/X.dims[mode0]; // int to use stdDev
+    int avgFbrNnz = X.totNnz/X.nFibers;
 
     // ofstream ofslc("slc_info.txt");
  
@@ -817,10 +818,10 @@ inline int tensor_stats(const Tensor &X){
     cout << ", " << X.nFibers << ", " ;//<< X.rwBin[0].size() << ", " << X.rwBin[1].size();
     cout << endl;
 
-    if(totNnz == X.nnz)
+    if(totNnz == X.totNnz)
         cout << "nnz matched " << totNnz << endl;
     else
-        cout << "nnz not matched! sliceNnz " << totNnz << " X.nnz " << X.nnz << endl;
+        cout << "nnz not matched! sliceNnz " << totNnz << " X.totNnz " << X.totNnz << endl;
 
     return 0;
 }

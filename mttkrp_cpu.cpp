@@ -10,7 +10,7 @@ int MTTKRP_COO_CPU(const Tensor &X, Matrix *U, const Options &Opt){
     ITYPE mode1 = X.modeOrder[1];
     ITYPE mode2 = X.modeOrder[2];
     
-    for(ITYPE x=0; x<X.nnz; ++x) {
+    for(ITYPE x=0; x<X.totNnz; ++x) {
 
         DTYPE tmp_val = 0;
         ITYPE idx0 = X.inds[mode0][x];
@@ -202,7 +202,7 @@ int MTTKRP_TILED_COO_CPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 
     for (int tile = 0; tile < Opt.nTile; ++tile)
     {
-        for(ITYPE x=0; x<TiledX[tile].nnz; ++x) {
+        for(ITYPE x=0; x<TiledX[tile].totNnz; ++x) {
 
             DTYPE tmp_val = 0;
             ITYPE idx0 = TiledX[tile].inds[mode0][x];

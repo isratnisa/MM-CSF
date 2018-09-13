@@ -348,15 +348,15 @@ int MTTKRP_COO_GPU(const Tensor &X, Matrix *U, const Options Opt){
     ITYPE mode1 = X.modeOrder[1];
     ITYPE mode2 = X.modeOrder[2];
 
-	checkCuda(cudaMalloc((void**) &dVals, X.nnz * sizeof(DTYPE)), 0);
-	checkCuda(cudaMalloc((void**) &dInds0, X.nnz * sizeof(ITYPE)), 0);
-	checkCuda(cudaMalloc((void**) &dInds1, X.nnz * sizeof(ITYPE)), 0);
-	checkCuda(cudaMalloc((void**) &dInds2, X.nnz * sizeof(ITYPE)), 0);
+	checkCuda(cudaMalloc((void**) &dVals, X.totNnz * sizeof(DTYPE)), 0);
+	checkCuda(cudaMalloc((void**) &dInds0, X.totNnz * sizeof(ITYPE)), 0);
+	checkCuda(cudaMalloc((void**) &dInds1, X.totNnz * sizeof(ITYPE)), 0);
+	checkCuda(cudaMalloc((void**) &dInds2, X.totNnz * sizeof(ITYPE)), 0);
 
-	checkCuda(cudaMemcpy(dVals, &(X.vals[0]), X.nnz * sizeof(DTYPE),cudaMemcpyHostToDevice), 0);
-	checkCuda(cudaMemcpy(dInds0, &(X.inds[mode0][0]), X.nnz * sizeof(ITYPE),cudaMemcpyHostToDevice), 0);
-	checkCuda(cudaMemcpy(dInds1, &(X.inds[mode1][0]), X.nnz * sizeof(ITYPE) ,cudaMemcpyHostToDevice), 0);
-	checkCuda(cudaMemcpy(dInds2, &(X.inds[mode2][0]), X.nnz * sizeof(ITYPE),cudaMemcpyHostToDevice), 0);
+	checkCuda(cudaMemcpy(dVals, &(X.vals[0]), X.totNnz * sizeof(DTYPE),cudaMemcpyHostToDevice), 0);
+	checkCuda(cudaMemcpy(dInds0, &(X.inds[mode0][0]), X.totNnz * sizeof(ITYPE),cudaMemcpyHostToDevice), 0);
+	checkCuda(cudaMemcpy(dInds1, &(X.inds[mode1][0]), X.totNnz * sizeof(ITYPE) ,cudaMemcpyHostToDevice), 0);
+	checkCuda(cudaMemcpy(dInds2, &(X.inds[mode2][0]), X.totNnz * sizeof(ITYPE),cudaMemcpyHostToDevice), 0);
 
 	// //Matrices
 	DTYPE *dU0, *dU1, *dU2;	
@@ -371,7 +371,7 @@ int MTTKRP_COO_GPU(const Tensor &X, Matrix *U, const Options Opt){
 	// BLOCK and GRID
 	int BLOCKSIZE = 128;
 	dim3 block(BLOCKSIZE, 1, 1), grid(1, 1, 1);
-	grid.x = (32 * X.nnz + BLOCKSIZE - 1) / BLOCKSIZE;
+	grid.x = (32 * X.totNnz + BLOCKSIZE - 1) / BLOCKSIZE;
 
     cudaEvent_t start, stop;
     cudaEventCreate(&start);
@@ -380,7 +380,7 @@ int MTTKRP_COO_GPU(const Tensor &X, Matrix *U, const Options Opt){
 
 	// CUDA call
 	checkCuda(cudaEventRecord(start), __LINE__);
-	mttkrp_COO_kernel<<<grid, block>>>(dVals, dInds0, dInds1, dInds2, X.nnz, dU0, dU1, dU2,
+	mttkrp_COO_kernel<<<grid, block>>>(dVals, dInds0, dInds1, dInds2, X.totNnz, dU0, dU1, dU2,
 								mode, R); 
 	checkCuda(cudaEventRecord(stop), __LINE__);
     cudaEventSynchronize(stop);
@@ -418,16 +418,16 @@ int MTTKRP_HCSR_GPU(Tensor &X, Matrix *U, const Options &Opt){
 	for (int s = 0; s < X.sliceIdx.size(); ++s)
 		X.slcMapperBin[0].push_back(s);
 
-	checkCuda(cudaMalloc((void**) &dVals, X.nnz * sizeof(DTYPE)), 0);
-	checkCuda(cudaMalloc((void**) &dInds2, X.nnz * sizeof(ITYPE)), 0);
+	checkCuda(cudaMalloc((void**) &dVals, X.totNnz * sizeof(DTYPE)), 0);
+	checkCuda(cudaMalloc((void**) &dInds2, X.totNnz * sizeof(ITYPE)), 0);
 	checkCuda(cudaMalloc((void**) &dSlcInds, X.sliceIdx.size() * sizeof(ITYPE)), 0);
 	checkCuda(cudaMalloc((void**) &dSlcPtr, X.slicePtr.size() * sizeof(ITYPE)), 0);
 	checkCuda(cudaMalloc((void**) &dSlcMapperBin, X.slcMapperBin[0].size() * sizeof(ITYPE)), 0);
 	checkCuda(cudaMalloc((void**) &dFbrPtr, X.fiberPtr.size() * sizeof(ITYPE)), 0);
 	checkCuda(cudaMalloc((void**) &dFbrIdx, X.fiberIdx.size() * sizeof(ITYPE)), 0);
 
-	checkCuda(cudaMemcpy(dVals, &(X.vals[0]), X.nnz * sizeof(DTYPE),cudaMemcpyHostToDevice), 0);
-	checkCuda(cudaMemcpy(dInds2, &(X.inds[mode2][0]), X.nnz * sizeof(ITYPE),cudaMemcpyHostToDevice), 0);
+	checkCuda(cudaMemcpy(dVals, &(X.vals[0]), X.totNnz * sizeof(DTYPE),cudaMemcpyHostToDevice), 0);
+	checkCuda(cudaMemcpy(dInds2, &(X.inds[mode2][0]), X.totNnz * sizeof(ITYPE),cudaMemcpyHostToDevice), 0);
 	checkCuda(cudaMemcpy(dSlcPtr, &(X.slicePtr[0]), X.slicePtr.size() * sizeof(ITYPE),cudaMemcpyHostToDevice), 0);
 	checkCuda(cudaMemcpy(dSlcInds, &(X.sliceIdx[0]), X.sliceIdx.size() * sizeof(ITYPE),cudaMemcpyHostToDevice), 0);
 	checkCuda(cudaMemcpy(dSlcMapperBin, &(X.slcMapperBin[0][0]), X.slcMapperBin[0].size() * sizeof(ITYPE),cudaMemcpyHostToDevice), 0);
@@ -498,7 +498,7 @@ int MTTKRP_TILED_COO_GPU(TiledTensor *TiledX, Matrix *U, const Options Opt){
     ITYPE mode2 = TiledX[0].modeOrder[2];
 
 	for (int tile = 0; tile < Opt.nTile; ++tile)
-		totNnz += TiledX[tile].nnz;
+		totNnz += TiledX[tile].totNnz;
 
 	checkCuda(cudaMalloc((void**) &dVals, totNnz * sizeof(DTYPE)), 0);
 	checkCuda(cudaMalloc((void**) &dInds0, totNnz * sizeof(ITYPE)), 0);
@@ -508,12 +508,12 @@ int MTTKRP_TILED_COO_GPU(TiledTensor *TiledX, Matrix *U, const Options Opt){
 	for (int tile = 0; tile < Opt.nTile; ++tile){
 		
 		if(tile > 0) 
-			dLoc += TiledX[tile-1].nnz;
+			dLoc += TiledX[tile-1].totNnz;
 
-		checkCuda(cudaMemcpy(dVals + dLoc, &(TiledX[tile].vals[0]), TiledX[tile].nnz * sizeof(DTYPE),cudaMemcpyHostToDevice), 0);
-		checkCuda(cudaMemcpy(dInds0 + dLoc, &(TiledX[tile].inds[mode0][0]), TiledX[tile].nnz * sizeof(ITYPE),cudaMemcpyHostToDevice), 0);
-		checkCuda(cudaMemcpy(dInds1 + dLoc, &(TiledX[tile].inds[mode1][0]), TiledX[tile].nnz * sizeof(ITYPE) ,cudaMemcpyHostToDevice), 0);
-		checkCuda(cudaMemcpy(dInds2 + dLoc, &(TiledX[tile].inds[mode2][0]), TiledX[tile].nnz * sizeof(ITYPE),cudaMemcpyHostToDevice), 0);
+		checkCuda(cudaMemcpy(dVals + dLoc, &(TiledX[tile].vals[0]), TiledX[tile].totNnz * sizeof(DTYPE),cudaMemcpyHostToDevice), 0);
+		checkCuda(cudaMemcpy(dInds0 + dLoc, &(TiledX[tile].inds[mode0][0]), TiledX[tile].totNnz * sizeof(ITYPE),cudaMemcpyHostToDevice), 0);
+		checkCuda(cudaMemcpy(dInds1 + dLoc, &(TiledX[tile].inds[mode1][0]), TiledX[tile].totNnz * sizeof(ITYPE) ,cudaMemcpyHostToDevice), 0);
+		checkCuda(cudaMemcpy(dInds2 + dLoc, &(TiledX[tile].inds[mode2][0]), TiledX[tile].totNnz * sizeof(ITYPE),cudaMemcpyHostToDevice), 0);
 	}
 
 	// //Matrices
@@ -540,14 +540,14 @@ int MTTKRP_TILED_COO_GPU(TiledTensor *TiledX, Matrix *U, const Options Opt){
 	for (int tile = 0; tile < Opt.nTile; ++tile){
 		
 		if(tile > 0) 
-			dLoc += TiledX[tile-1].nnz;
+			dLoc += TiledX[tile-1].totNnz;
 
 		cout << "Tile " << tile << " launched.. "<<endl;
 		
-		grid.x = (32 * TiledX[tile].nnz + BLOCKSIZE - 1) / BLOCKSIZE;
+		grid.x = (32 * TiledX[tile].totNnz + BLOCKSIZE - 1) / BLOCKSIZE;
 
 		checkCuda(cudaEventRecord(start), __LINE__);
-		mttkrp_COO_kernel<<<grid, block>>>(dVals + dLoc, dInds0 + dLoc, dInds1 + dLoc, dInds2 + dLoc, TiledX[tile].nnz, dU0, dU1, dU2,
+		mttkrp_COO_kernel<<<grid, block>>>(dVals + dLoc, dInds0 + dLoc, dInds1 + dLoc, dInds2 + dLoc, TiledX[tile].totNnz, dU0, dU1, dU2,
 								mode, R); 
 	
 		checkCuda(cudaEventRecord(stop), __LINE__);
@@ -587,7 +587,7 @@ int MTTKRP_TILED_HCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
     ITYPE mode2 = TiledX[0].modeOrder[2];
 
 	for (int tile = 0; tile < Opt.nTile; ++tile){
-		totNnz += TiledX[tile].nnz;
+		totNnz += TiledX[tile].totNnz;
 		totSlcPtr += TiledX[tile].slicePtr.size() ;
 		totSlcIdx += TiledX[tile].sliceIdx.size() ;
 		totFbrPtr += TiledX[tile].fiberPtr.size() ;
@@ -603,14 +603,14 @@ int MTTKRP_TILED_HCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 
 	for (int tile = 0; tile < Opt.nTile; ++tile){	
 		if(tile > 0) {
-			dLoc += TiledX[tile-1].nnz;
+			dLoc += TiledX[tile-1].totNnz;
 			dSlcLoc += TiledX[tile - 1].slicePtr.size(); // all tile same
 			dSlcIdxLoc += TiledX[tile - 1].sliceIdx.size(); 
 			dFbrLoc += TiledX[tile - 1].fiberPtr.size();
 		}
 
-		checkCuda(cudaMemcpy(dVals + dLoc, &(TiledX[tile].vals[0]), TiledX[tile].nnz * sizeof(DTYPE),cudaMemcpyHostToDevice), 0);
-		checkCuda(cudaMemcpy(dInds2 + dLoc, &(TiledX[tile].inds[mode2][0]), TiledX[tile].nnz * sizeof(ITYPE),cudaMemcpyHostToDevice), 0);
+		checkCuda(cudaMemcpy(dVals + dLoc, &(TiledX[tile].vals[0]), TiledX[tile].totNnz * sizeof(DTYPE),cudaMemcpyHostToDevice), 0);
+		checkCuda(cudaMemcpy(dInds2 + dLoc, &(TiledX[tile].inds[mode2][0]), TiledX[tile].totNnz * sizeof(ITYPE),cudaMemcpyHostToDevice), 0);
 		checkCuda(cudaMemcpy(dSlcPtr + dSlcLoc, &(TiledX[tile].slicePtr[0]), TiledX[tile].slicePtr.size() * sizeof(ITYPE),cudaMemcpyHostToDevice), 0);
 		checkCuda(cudaMemcpy(dSlcInds + dSlcIdxLoc, &(TiledX[tile].sliceIdx[0]), TiledX[tile].sliceIdx.size() * sizeof(ITYPE),cudaMemcpyHostToDevice), 0);
 		checkCuda(cudaMemcpy(dFbrPtr + dFbrLoc, &(TiledX[tile].fiberPtr[0]), TiledX[tile].fiberPtr.size() * sizeof(ITYPE),cudaMemcpyHostToDevice), 0);
@@ -661,7 +661,7 @@ int MTTKRP_TILED_HCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 		dBinLoc = 0;
 		
 		if(tile > 0) {
-			dLoc += TiledX[tile-1].nnz;
+			dLoc += TiledX[tile-1].totNnz;
 			dSlcLoc += TiledX[tile - 1].slicePtr.size(); 
 			dSlcIdxLoc += TiledX[tile - 1].sliceIdx.size(); 
 			dFbrLoc += TiledX[tile - 1].fiberPtr.size();
@@ -745,7 +745,7 @@ int MTTKRP_TILED_HCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 	    
 	    if(Opt.verbose){
 	    	cout << "Tile: " << tile << " - time: " << mili << "ms";
-	    	cout <<" nnz: " << TiledX[tile].nnz << " nFibers: "
+	    	cout <<" nnz: " << TiledX[tile].totNnz << " nFibers: "
 	    	<< TiledX[tile].fiberPtr.size() << " nSlc " << TiledX[tile].sliceIdx.size() << " ";
 			cout << endl;
 		}   
@@ -828,18 +828,18 @@ int MTTKRP_HYB_GPU(const HYBTensor &HybX, Matrix *U, const Options &Opt){
  
     // ****** mem op HYB HCSR *******
 
-    if(HybX.nnz > 0){
+    if(HybX.HCSRnnz > 0){
 
-		checkCuda(cudaMalloc((void**) &dVals, HybX.nnz * sizeof(DTYPE)), 0);
-		checkCuda(cudaMalloc((void**) &dInds2, HybX.nnz * sizeof(ITYPE)), 0);
+		checkCuda(cudaMalloc((void**) &dVals, HybX.HCSRnnz * sizeof(DTYPE)), 0);
+		checkCuda(cudaMalloc((void**) &dInds2, HybX.HCSRnnz * sizeof(ITYPE)), 0);
 		checkCuda(cudaMalloc((void**) &dSlcPtr,  HybX.slicePtr.size() * sizeof(ITYPE)), 0);
 		checkCuda(cudaMalloc((void**) &dSlcInds, HybX.sliceIdx.size() * sizeof(ITYPE)), 0);
 		checkCuda(cudaMalloc((void**) &dSlcMapperBin, HybX.slicePtr.size() * sizeof(ITYPE)), 0);
 		checkCuda(cudaMalloc((void**) &dFbrPtr, HybX.fiberPtr.size()  * sizeof(ITYPE)), 0);
 		checkCuda(cudaMalloc((void**) &dFbrIdx, HybX.fiberPtr.size() * sizeof(ITYPE)), 0);
 
-		checkCuda(cudaMemcpy(dVals + dLoc, &(HybX.vals[0]), HybX.nnz * sizeof(DTYPE),cudaMemcpyHostToDevice), 0);
-		checkCuda(cudaMemcpy(dInds2 + dLoc, &(HybX.inds[mode2][0]), HybX.nnz * sizeof(ITYPE),cudaMemcpyHostToDevice), 0);
+		checkCuda(cudaMemcpy(dVals + dLoc, &(HybX.vals[0]), HybX.HCSRnnz * sizeof(DTYPE),cudaMemcpyHostToDevice), 0);
+		checkCuda(cudaMemcpy(dInds2 + dLoc, &(HybX.inds[mode2][0]), HybX.HCSRnnz * sizeof(ITYPE),cudaMemcpyHostToDevice), 0);
 		checkCuda(cudaMemcpy(dSlcPtr + dSlcLoc, &(HybX.slicePtr[0]), HybX.slicePtr.size() * sizeof(ITYPE),cudaMemcpyHostToDevice), 0);
 		checkCuda(cudaMemcpy(dSlcInds + dSlcIdxLoc, &(HybX.sliceIdx[0]), HybX.sliceIdx.size() * sizeof(ITYPE),cudaMemcpyHostToDevice), 0);
 		checkCuda(cudaMemcpy(dFbrPtr + dFbrLoc, &(HybX.fiberPtr[0]), HybX.fiberPtr.size() * sizeof(ITYPE),cudaMemcpyHostToDevice), 0);
@@ -998,7 +998,7 @@ int MTTKRP_HYB_GPU(const HYBTensor &HybX, Matrix *U, const Options &Opt){
 
 	// ******* CUDA HSCR *******
 
-	if(HybX.nnz > 0){
+	if(HybX.HCSRnnz > 0){
 		dBinLoc = 0;
 
 		BLOCKSIZE = 512;
