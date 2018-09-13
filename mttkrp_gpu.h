@@ -148,7 +148,7 @@ __global__ void mttkrp_CSL_kernel_hvyBin(DTYPE * vals, ITYPE *dSlcInds, ITYPE *d
 		unsigned int fb_end = slicePtr[mappedSlc] + (localBId + 1) * fbrPerTb ;
 
 		tmp_val = 0;
-		for (int fbr = fb_st + workId; fbr < fb_end; fbr+=warpPerSlice){
+		for (int fbr = fb_st + workId; fbr < fb_end && fbr < slicePtr[mappedSlc+1]; fbr+=warpPerSlice){
 			
 		    unsigned int idx1 = dInds1[fbr];
 	        unsigned int idx2 = dInds2[fbr];                
