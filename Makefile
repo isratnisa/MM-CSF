@@ -14,10 +14,10 @@ NVCCLINKFLAGS = -L$(NVCC_LIB_PATH) -lcudart
 # nvcc -ccbin=/cm/shared/apps/intel/compilers_and_libraries_2016.3.210/linux/bin/intel64/icc -std=c++11 -o t912 t912.cu
 all: mttkrp
 
-mttkrp: mttkrp.cu mttkrp_gpu.h mttkrp_cpu.h mttkrp_cpu.o util.h
+mttkrp: mttkrp.cu mttkrp_gpu.h mttkrp_cpu.h mttkrp_cpu.o 
 	${NVCC} ${NVCCFLAGS} -o mttkrp mttkrp_cpu.o mttkrp.cu $(NVCCLINKFLAGS)  
 
-mttkrp_cpu.o: mttkrp_cpu.h mttkrp_cpu.cpp 
+mttkrp_cpu.o: mttkrp_cpu.h mttkrp_cpu.cpp util.h
 	${CXX} ${CXXFLAGS} -c -o mttkrp_cpu.o mttkrp_cpu.cpp
 
 clean:
