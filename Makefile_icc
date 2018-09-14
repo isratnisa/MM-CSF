@@ -1,0 +1,39 @@
+# CXX=g++
+CXX=icc
+NVCC=nvcc
+NVCC_LIB_PATH=/usr/lib/x86_64-linux-gnu
+#CXXFLAGS=-fopenmp -static -O3
+#CXXFLAGS=-fopenmp -fPIC -pipe  -O3
+# CXXFLAGS=-O3 -std=c++11 -g -fopenmp -I/usr/local/papi/5.6.0/include -L/usr/local/papi/5.6.0/lib -lpapi 
+CXXFLAGS=-restrict -std=c++11
+# -Ofast -qopenmp -restrict -std=c++11 -I/users/PAS0134/osu1601/asr/bin/papi/include -L/users/PAS0134/osu1601/asr/bin/papi/lib -lpapi
+CXXOPTIFLAGS=-O3 -qopenmp -no-prec-div -march=core-avx2 -fp-model fast=2 -parallel -complex-limited-range 
+#-funroll-loops
+# -xMIC-AVX512 -fp-model fast=2 -complex-limited-range 
+# -fno-tree-vectorize
+#NVCCFLAGS +=-O3 -fopenmp -w -restrict #--ptxas-options=-v
+#NVCCFLAGS +=-O3 -w -gencode arch=compute_35,code=sm_35 -rdc=true -Xptxas -dlcm=ca -Xcompiler -fopenmp
+# -dc -G --restrict -m64 -Xcompiler -Wall
+
+# NVCCFLAGS += -O3 -w -arch=sm_60 -rdc=true -Xptxas -dlcm=ca -Xcompiler -fopenmp --std=c++11 -m64 -lineinfo #–default-stream #per-thread #-g #-G
+NVCCLINKFLAGS = -L$(NVCC_LIB_PATH) -lcudart
+
+# NVCCFLAGS += -O3 -I/usr/local/papi/5.6.0/include -L/usr/local/papi/5.6.0/lib -lpapi  -w -arch=sm_60 -rdc=true -Xptxas -dlcm=ca -Xcompiler -fopenmp --std=c++11 -m64 -lineinfo #–default-stream #per-thread #-g #-G
+NVCCFLAGS += -O3   -w -arch=sm_60 -rdc=true -Xptxas -dlcm=ca -Xcompiler -fopenmp --std=c++11 -m64 -lineinfo -I/users/PAS0134/osu1601/asr/bin/papi/include -L/users/PAS0134/osu1601/asr/bin/papi/lib -lpapi
+#–default-stream #per-thread #-g #-G
+
+# NVCCLINKFLAGS = -L$(NVCC_LIB_PATH) -lcudart
+
+all: mttkrp
+
+mttkrp: mttkrp.cu mttkrp_gpu.h mttkrp_cpu.h mttkrp_cpu.o 
+	${NVCC} ${NVCCFLAGS} -ccbin=/opt/intel/compilers_and_libraries_2016.3.210/linux/bin/intel64/icc -o mttkrp mttkrp_cpu.o mttkrp.cu $(NVCCLINKFLAGS)  
+	
+mttkrp_cpu.o: mttkrp_cpu.h mttkrp_cpu.cpp util.h
+	${CXX} ${CXXFLAGS} ${CXXOPTIFLAGS} -c -o mttkrp_cpu.o mttkrp_cpu.cpp
+
+clean:
+	rm -rf mttkrp *.o f
+
+# ${NVCC} ${NVCCFLAGS} -ccbin=/opt/intel/compilers_and_libraries_2016/linux/bin/intel64/icc -o mttkrp mttkrp_cpu.o mttkrp.cu $(NVCCLINKFLAGS)  
+#${NVCC} ${NVCCFLAGS} -o mttkrp mttkrp_cpu.o mttkrp.cu $(NVCCLINKFLAGS)  
