@@ -89,7 +89,7 @@ int main(int argc, char* argv[]){
         make_Bin(HybX, Opt);
         // print_HYBtensor(HybX);
         MTTKRP_HYB_GPU(HybX, U, Opt);
-        //MTTKRP_HYB_CPU(HybX, U, Opt);
+        // MTTKRP_HYB_CPU(HybX, U, Opt);
     }
     // // HYB GPU
     // else if(Opt.impType == 10){

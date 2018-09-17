@@ -9,6 +9,8 @@ void Hello();
 //implementation 1; MTTKRP on CPU using COO
 int MTTKRP_COO_CPU(const Tensor &X, Matrix *U, const Options &Opt);
 
+int MTTKRP_COO_CPU_4D(const Tensor &X, Matrix *U, const Options &Opt);
+
 //implementation 5; Tiled MTTKRP on CPU using COO
 int MTTKRP_TILED_COO_CPU(TiledTensor *TiledX, Matrix *U, const Options &Opt);
 

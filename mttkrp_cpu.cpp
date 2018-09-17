@@ -25,6 +25,31 @@ int MTTKRP_COO_CPU(const Tensor &X, Matrix *U, const Options &Opt){
     }
 }
 
+int MTTKRP_COO_CPU_4D(const Tensor &X, Matrix *U, const Options &Opt){
+
+    ITYPE R = Opt.R;
+    // #pragma omp parallel for //reduction(+:U[0].vals[:R])
+    ITYPE mode0 = X.modeOrder[0];
+    ITYPE mode1 = X.modeOrder[1];
+    ITYPE mode2 = X.modeOrder[2];
+    ITYPE mode3 = X.modeOrder[3];
+    
+    for(ITYPE x=0; x<X.totNnz; ++x) {
+
+        DTYPE tmp_val = 0;
+        ITYPE idx0 = X.inds[mode0][x];
+        ITYPE idx1 = X.inds[mode1][x];
+        ITYPE idx2 = X.inds[mode2][x];
+        ITYPE idx3 = X.inds[mode3][x];
+       
+        // #pragma omp atomic
+        for(ITYPE r=0; r<R; ++r) {            
+            tmp_val = X.vals[x] * U[mode1].vals[idx1 * R + r] * U[mode2].vals[idx2 * R + r] * U[mode3].vals[idx3 * R + r];
+            U[mode0].vals[idx0 * R + r] += tmp_val;
+        }
+    }
+}
+
 int MTTKRP_HCSR_CPU(const Tensor &X, Matrix *U, const Options &Opt){
         
     ITYPE mode0 = X.modeOrder[0];
@@ -45,12 +70,12 @@ int MTTKRP_HCSR_CPU(const Tensor &X, Matrix *U, const Options &Opt){
         DTYPE *outBuffer = new DTYPE[R];
 
         // #pragma omp for
-        for(ITYPE slc = 0; slc < X.sliceIdx.size(); ++slc) {
+        for(ITYPE slc = 0; slc < X.fbrIdx[0].size(); ++slc) {
             memset(outBuffer, 0, R * sizeof(DTYPE));
 
-            ITYPE idx0 = X.sliceIdx[slc];
-            const int fb_st = X.slicePtr[slc];
-            const int fb_end = X.slicePtr[slc+1];
+            ITYPE idx0 = X.fbrIdx[0][slc];
+            const int fb_st = X.fbrPtr[0][slc];
+            const int fb_end = X.fbrPtr[0][slc+1];
             
             for (int fbr = fb_st; fbr < fb_end; ++fbr){
                 #pragma omp simd
@@ -58,7 +83,7 @@ int MTTKRP_HCSR_CPU(const Tensor &X, Matrix *U, const Options &Opt){
                     tmp_val[r] = 0;
                 }
                  
-                for(ITYPE x = X.fiberPtr[fbr]; x < X.fiberPtr[fbr+1]; ++x) {
+                for(ITYPE x = X.fbrPtr[1][fbr]; x < X.fbrPtr[1][fbr+1]; ++x) {
 
                     ITYPE idx2 = X.inds[mode2][x];  
                     // ITYPE idx2 = arrIdx2[x];  
@@ -68,7 +93,7 @@ int MTTKRP_HCSR_CPU(const Tensor &X, Matrix *U, const Options &Opt){
                     }
                 }
                 
-                ITYPE idx1 = X.fiberIdx[fbr];
+                ITYPE idx1 = X.fbrIdx[1][fbr];
                  #pragma omp simd
                 for(ITYPE r=0; r<R; ++r) 
                     outBuffer[r] += tmp_val[r] * U1[idx1 * R + r];               
@@ -99,12 +124,12 @@ int MTTKRP_HYB_HCSR_CPU(HYBTensor &X, Matrix *U, Options &Opt){
         DTYPE *outBuffer = new DTYPE[R];
 
         // #pragma omp for
-        for(ITYPE slc = 0; slc < X.sliceIdx.size(); ++slc) {
+        for(ITYPE slc = 0; slc < X.fbrIdx[0].size(); ++slc) {
             memset(outBuffer, 0, R * sizeof(DTYPE));
 
-            ITYPE idx0 = X.sliceIdx[slc];
-            const int fb_st = X.slicePtr[slc];
-            const int fb_end = X.slicePtr[slc+1];
+            ITYPE idx0 = X.fbrIdx[0][slc];
+            const int fb_st = X.fbrPtr[0][slc];
+            const int fb_end = X.fbrPtr[0][slc+1];
             
             for (int fbr = fb_st; fbr < fb_end; ++fbr){
                 #pragma omp simd
@@ -112,7 +137,7 @@ int MTTKRP_HYB_HCSR_CPU(HYBTensor &X, Matrix *U, Options &Opt){
                     tmp_val[r] = 0;
                 }
                  
-                for(ITYPE x = X.fiberPtr[fbr]; x < X.fiberPtr[fbr+1]; ++x) {
+                for(ITYPE x = X.fbrPtr[1][fbr]; x < X.fbrPtr[1][fbr+1]; ++x) {
 
                     ITYPE idx2 = X.inds[mode2][x];  
                     // ITYPE idx2 = arrIdx2[x];  
@@ -122,7 +147,7 @@ int MTTKRP_HYB_HCSR_CPU(HYBTensor &X, Matrix *U, Options &Opt){
                     }
                 }
                 
-                ITYPE idx1 = X.fiberIdx[fbr];
+                ITYPE idx1 = X.fbrIdx[1][fbr];
                  #pragma omp simd
                 for(ITYPE r=0; r<R; ++r) 
                     outBuffer[r] += tmp_val[r] * U1[idx1 * R + r];               
@@ -234,20 +259,20 @@ int MTTKRP_TILED_HCSR_CPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
             DTYPE *outBuffer = new DTYPE[R];
 
             #pragma omp for
-            for(ITYPE slc = 0; slc < TiledX[tile].sliceIdx.size(); ++slc) {
+            for(ITYPE slc = 0; slc < TiledX[tile].fbrIdx[0].size(); ++slc) {
                 memset(outBuffer, 0, R * sizeof(DTYPE));
 
-                ITYPE idx0 = TiledX[tile].sliceIdx[slc];
-                int fb_st = TiledX[tile].slicePtr[slc];
-                int fb_end = TiledX[tile].slicePtr[slc+1];
+                ITYPE idx0 = TiledX[tile].fbrIdx[0][slc];
+                int fb_st = TiledX[tile].fbrPtr[0][slc];
+                int fb_end = TiledX[tile].fbrPtr[0][slc+1];
                 
                 for (int fbr = fb_st; fbr < fb_end; ++fbr){
-                    // ITYPE idx1 = TiledX[tile].inds[mode1][TiledX[tile].fiberPtr[fbr]];
+                    // ITYPE idx1 = TiledX[tile].inds[mode1][TiledX[tile].fbrPtr[1][fbr]];
                     
                     for(ITYPE r=0; r<R; ++r)
                         tmp_val[r] = 0;
                      
-                    for(ITYPE x = TiledX[tile].fiberPtr[fbr]; x < TiledX[tile].fiberPtr[fbr+1]; ++x) {
+                    for(ITYPE x = TiledX[tile].fbrPtr[1][fbr]; x < TiledX[tile].fbrPtr[1][fbr+1]; ++x) {
 
                         ITYPE idx2 = TiledX[tile].inds[mode2][x];  
                         #pragma omp simd              
@@ -256,8 +281,8 @@ int MTTKRP_TILED_HCSR_CPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
                         }
                     }
 
-                    ITYPE idx1 = TiledX[tile].fiberIdx[fbr];
-                    // ITYPE idx1 = TiledX[tile].inds[mode1][TiledX[tile].fiberPtr[fbr]];
+                    ITYPE idx1 = TiledX[tile].fbrIdx[1][fbr];
+                    // ITYPE idx1 = TiledX[tile].inds[mode1][TiledX[tile].fbrPtr[1][fbr]];
                     // #pragma omp simd
                     for(ITYPE r=0; r<R; ++r) 
                         outBuffer[r] += tmp_val[r] * U[mode1].vals[idx1 * R + r];//U1[idx1 * R + r];
@@ -285,22 +310,22 @@ int MTTKRP_TILED_HCSR_CPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 //         DTYPE tmp_val[R] ;
 
 //         #pragma omp for
-//         for(ITYPE slc = 0; slc < X.sliceIdx.size(); ++slc) {
+//         for(ITYPE slc = 0; slc < X.fbrIdx[0].size(); ++slc) {
 
 //             // DTYPE *tmp_val = new DTYPE[R];
-//             ITYPE idx0 = X.sliceIdx[slc];
-//             int fb_st = X.slicePtr[slc];
-//             int fb_end = X.slicePtr[slc+1];
+//             ITYPE idx0 = X.fbrIdx[0][slc];
+//             int fb_st = X.fbrPtr[0][slc];
+//             int fb_end = X.fbrPtr[0][slc+1];
             
 //             for (int fbr = fb_st; fbr < fb_end; ++fbr){
-//                 ITYPE idx1 = Xinds1[X.fiberPtr[fbr]];
-//                 // ITYPE idx1 = X.inds[1][X.fiberPtr[fbr]];
+//                 ITYPE idx1 = Xinds1[X.fbrPtr[1][fbr]];
+//                 // ITYPE idx1 = X.inds[1][X.fbrPtr[1][fbr]];
                 
 //                 #pragma omp simd
 //                 for(ITYPE r=0; r<R; ++r)
 //                     tmp_val[r] = 0;
                  
-//                 for(ITYPE x = X.fiberPtr[fbr]; x < X.fiberPtr[fbr+1]; ++x) 
+//                 for(ITYPE x = X.fbrPtr[1][fbr]; x < X.fbrPtr[1][fbr+1]; ++x) 
 //                 {
 //                     ITYPE idx2 = Xinds2[x];
 //                     auto * restrict u2_v  = &(U2.vals[idx2 * R]);
