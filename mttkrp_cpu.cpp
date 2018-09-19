@@ -74,11 +74,9 @@ int MTTKRP_HCSR_CPU(const Tensor &X, Matrix *U, const Options &Opt){
             memset(outBuffer, 0, R * sizeof(DTYPE));
 
             ITYPE idx0 = X.fbrIdx[0][slc];
-            const int fb_st = X.fbrPtr[0][slc];
-            const int fb_end = X.fbrPtr[0][slc+1];
             
-            for (int fbr = fb_st; fbr < fb_end; ++fbr){
-                #pragma omp simd
+            for (int fbr = X.fbrPtr[0][slc]; fbr <  X.fbrPtr[0][slc+1]; ++fbr){
+
                 for(ITYPE r=0; r<R; ++r){
                     tmp_val[r] = 0;
                 }
@@ -86,18 +84,77 @@ int MTTKRP_HCSR_CPU(const Tensor &X, Matrix *U, const Options &Opt){
                 for(ITYPE x = X.fbrPtr[1][fbr]; x < X.fbrPtr[1][fbr+1]; ++x) {
 
                     ITYPE idx2 = X.inds[mode2][x];  
-                    // ITYPE idx2 = arrIdx2[x];  
-                    #pragma omp simd              
+        
                     for(ITYPE r=0; r<R; ++r) {
                         tmp_val[r] += X.vals[x] * U2[idx2 * R + r]; 
                     }
                 }
                 
                 ITYPE idx1 = X.fbrIdx[1][fbr];
-                 #pragma omp simd
+
                 for(ITYPE r=0; r<R; ++r) 
                     outBuffer[r] += tmp_val[r] * U1[idx1 * R + r];               
             }
+            for(ITYPE r=0; r<R; ++r) 
+                U0[idx0 * R + r] += outBuffer[r];
+        }
+    }
+}
+int MTTKRP_HCSR_CPU_4D(const Tensor &X, Matrix *U, const Options &Opt){
+        
+    ITYPE mode0 = X.modeOrder[0];
+    ITYPE mode1 = X.modeOrder[1];
+    ITYPE mode2 = X.modeOrder[2];
+    ITYPE mode3 = X.modeOrder[3];
+    ITYPE R = Opt.R;
+
+     // MTTKRP_HCSR_CPU_RSTRCT(const Tensor &X, U[], const Options &Opt)
+    DTYPE * U0 = U[mode0].vals;
+    DTYPE const * const  U1 = U[mode1].vals;
+    DTYPE const * const  U2 = U[mode2].vals;
+    DTYPE const * const  U3 = U[mode3].vals;
+
+    // ITYPE const * const __restrict__ arrIdx2 = &(X.inds[mode2][0]);
+  
+    // #pragma omp parallel
+    {    
+                    
+        DTYPE *tmp_val = new DTYPE[R];
+        DTYPE *outBuffer = new DTYPE[R];
+        DTYPE *outBuffer1 = new DTYPE[R];
+
+        // #pragma omp for
+        for(ITYPE slc = 0; slc < X.fbrIdx[0].size(); ++slc) {
+            
+     
+            memset(outBuffer, 0, R * sizeof(DTYPE));
+            
+            for (int fbrS = X.fbrPtr[0][slc]; fbrS <  X.fbrPtr[0][slc+1]; ++fbrS){
+
+         
+                memset(outBuffer1, 0, R * sizeof(DTYPE));
+                
+                for (int fbr = X.fbrPtr[1][fbrS]; fbr < X.fbrPtr[1][fbrS+1]; ++fbr){        
+     
+              
+                    memset(tmp_val, 0, R * sizeof(DTYPE));
+                     
+                    for(ITYPE x = X.fbrPtr[2][fbr]; x < X.fbrPtr[2][fbr+1]; ++x) {
+                        
+                        ITYPE idx3 = X.inds[mode3][x];  
+            
+                        for(ITYPE r=0; r<R; ++r) 
+                            tmp_val[r] += X.vals[x] * U3[idx3 * R + r]; 
+                    } 
+                    ITYPE idx2 = X.fbrIdx[2][fbr];              
+                    for(ITYPE r=0; r<R; ++r) 
+                        outBuffer1[r] += tmp_val[r] * U2[idx2 * R + r];    
+                } 
+                ITYPE idx1 = X.fbrIdx[1][fbrS]; 
+                for(ITYPE r=0; r<R; ++r) 
+                    outBuffer[r] += outBuffer1[r] * U1[idx1 * R + r];   
+            }
+            ITYPE idx0 = X.fbrIdx[0][slc];
             for(ITYPE r=0; r<R; ++r) 
                 U0[idx0 * R + r] += outBuffer[r];
         }

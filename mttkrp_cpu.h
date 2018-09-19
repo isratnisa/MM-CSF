@@ -17,6 +17,8 @@ int MTTKRP_TILED_COO_CPU(TiledTensor *TiledX, Matrix *U, const Options &Opt);
 //implementation 2
 int MTTKRP_HCSR_CPU(const Tensor &X, Matrix *U, const Options &Opt);
 
+int MTTKRP_HCSR_CPU_4D(const Tensor &X, Matrix *U, const Options &Opt);
+
 int MTTKRP_HYB_CSL_CPU( HYBTensor &HybX, Matrix *U, Options &Opt);
 
 int MTTKRP_HYB_HCSR_CPU(HYBTensor &X, Matrix *U, Options &Opt);

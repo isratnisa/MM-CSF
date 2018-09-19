@@ -33,9 +33,8 @@ int main(int argc, char* argv[]){
         cout << "Not the correct file for this mode" << endl;
         exit(0);
     }
-    
-    //TBD:: fix hard coded 3
-    Matrix U[3];   
+      
+    Matrix *U = new Matrix[X.ndims]; 
     create_mats(X, U, Opt);
     randomize_mats(X, U, Opt);
     zero_mat(X, U, Opt.mode);
@@ -54,29 +53,29 @@ int main(int argc, char* argv[]){
     // COO CPU   
     if(Opt.impType == 1){
         double t0 = seconds();
-        MTTKRP_COO_CPU(X, U, Opt);
+        ((X.ndims == 3) ?  MTTKRP_COO_CPU(X, U, Opt) :  MTTKRP_COO_CPU_4D(X, U, Opt));   
         printf("COO CPU - time: %.3f sec \n", seconds() - t0);
     }
 
     // HCSR CPU   
     else if(Opt.impType == 2){
-        create_HCSR(X, Opt);   
-        // print_COOtensor(X); 
-        // print_HCSRtensor(X);     
+        create_HCSR(X, Opt);  
+        print_COOtensor(X); 
+        ((X.ndims == 3) ? print_HCSRtensor(X) : print_HCSRtensor_4D(X));          
         double t0 = seconds();
-        MTTKRP_HCSR_CPU(X, U, Opt);
+        ((X.ndims == 3) ?  MTTKRP_HCSR_CPU(X, U, Opt) :  MTTKRP_HCSR_CPU_4D(X, U, Opt));   
         printf("gcc no opt : HCSR CPU - time: %.3f sec \n", seconds() - t0);
     }
 
     // COO GPU  
     else if(Opt.impType == 3){
-        cout << " GPU COO has bugs! " << endl;
         MTTKRP_COO_GPU(X, U, Opt);
     }
 
     // HCSR GPU  
     else if(Opt.impType == 4){
         create_HCSR(X, Opt);
+        make_Bin(X, Opt);
         MTTKRP_HCSR_GPU(X, U, Opt);
     }
     // HYB CPU
@@ -86,7 +85,7 @@ int main(int argc, char* argv[]){
          // print_HCSRtensor(X);
         HYBTensor HybX(X);
         create_HYB(HybX, X, Opt);
-        make_Bin(HybX, Opt);
+        make_HybBin(HybX, Opt);
         // print_HYBtensor(HybX);
         MTTKRP_HYB_GPU(HybX, U, Opt);
         // MTTKRP_HYB_CPU(HybX, U, Opt);
@@ -167,8 +166,9 @@ int main(int argc, char* argv[]){
         DTYPE *out = (DTYPE*)malloc(nr * nc * sizeof(DTYPE));
         memcpy(out, U[mode].vals, nr*nc * sizeof(DTYPE));
         zero_mat(X, U, Opt.mode);
-
-        MTTKRP_HCSR_CPU(X, U, Opt);
+        cout << "correctness with COO " << endl;
+        ((X.ndims == 3) ?  MTTKRP_COO_CPU(X, U, Opt) :  MTTKRP_COO_CPU_4D(X, U, Opt));   
+        // MTTKRP_COO_CPU(X, U, Opt);
         correctness_check(out, U[mode].vals, nr, nc);
     }
 }
