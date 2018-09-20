@@ -33,9 +33,8 @@ int main(int argc, char* argv[]){
         cout << "Not the correct file for this mode" << endl;
         exit(0);
     }
-    
-    //TBD:: fix hard coded 3
-    Matrix U[3];   
+      
+    Matrix *U = new Matrix[X.ndims]; 
     create_mats(X, U, Opt);
     randomize_mats(X, U, Opt);
     zero_mat(X, U, Opt.mode);
@@ -54,23 +53,22 @@ int main(int argc, char* argv[]){
     // COO CPU   
     if(Opt.impType == 1){
         double t0 = seconds();
-        MTTKRP_COO_CPU(X, U, Opt);
+        ((X.ndims == 3) ?  MTTKRP_COO_CPU(X, U, Opt) :  MTTKRP_COO_CPU_4D(X, U, Opt));   
         printf("COO CPU - time: %.3f sec \n", seconds() - t0);
     }
 
     // HCSR CPU   
     else if(Opt.impType == 2){
-        create_HCSR(X, Opt);   
+        create_HCSR(X, Opt);  
         // print_COOtensor(X); 
-        // print_HCSRtensor(X);     
+        // ((X.ndims == 3) ? print_HCSRtensor(X) : print_HCSRtensor_4D(X));          
         double t0 = seconds();
-        MTTKRP_HCSR_CPU(X, U, Opt);
+        ((X.ndims == 3) ?  MTTKRP_HCSR_CPU(X, U, Opt) :  MTTKRP_HCSR_CPU_4D(X, U, Opt));   
         printf("gcc no opt : HCSR CPU - time: %.3f sec \n", seconds() - t0);
     }
 
     // COO GPU  
     else if(Opt.impType == 3){
-        cout << " GPU COO has bugs! " << endl;
         MTTKRP_COO_GPU(X, U, Opt);
     }
 
@@ -81,15 +79,17 @@ int main(int argc, char* argv[]){
     }
     // HYB CPU
     else if(Opt.impType == 9){
-        // print_COOtensor(X);
         create_HCSR(X, Opt);
-         // print_HCSRtensor(X);
         HYBTensor HybX(X);
-        create_HYB(HybX, X, Opt);
-        make_Bin(HybX, Opt);
+        ((X.ndims == 3) ?  create_HYB(HybX, X, Opt) :  create_HYB_4D(HybX, X, Opt));   
+        
+        // create_HYB(HybX, X, Opt);
+        make_HybBin(HybX, Opt);
         // print_HYBtensor(HybX);
+        
+        // ((X.ndims == 3) ?  MTTKRP_HYB_CPU(HybX, U, Opt) :  MTTKRP_HYB_CPU_4D(HybX, U, Opt));   
         MTTKRP_HYB_GPU(HybX, U, Opt);
-        //MTTKRP_HYB_CPU(HybX, U, Opt);
+        
     }
     // // HYB GPU
     // else if(Opt.impType == 10){
@@ -135,7 +135,7 @@ int main(int argc, char* argv[]){
          // HCSR GPU  
         else if(Opt.impType == 6){
             double t0 = seconds();
-            MTTKRP_TILED_HCSR_CPU(TiledX, U, Opt); 
+            ((X.ndims == 3) ? MTTKRP_TILED_HCSR_CPU(TiledX, U, Opt) : MTTKRP_TILED_HCSR_CPU_4D(TiledX, U, Opt)); 
             printf("TILED HCSR CPU - time: %.3f sec \n", seconds() - t0); 
         }  
 
@@ -167,8 +167,9 @@ int main(int argc, char* argv[]){
         DTYPE *out = (DTYPE*)malloc(nr * nc * sizeof(DTYPE));
         memcpy(out, U[mode].vals, nr*nc * sizeof(DTYPE));
         zero_mat(X, U, Opt.mode);
-
-        MTTKRP_HCSR_CPU(X, U, Opt);
+        cout << "correctness with COO " << endl;
+        ((X.ndims == 3) ?  MTTKRP_COO_CPU(X, U, Opt) :  MTTKRP_COO_CPU_4D(X, U, Opt));   
+        // MTTKRP_COO_CPU(X, U, Opt);
         correctness_check(out, U[mode].vals, nr, nc);
     }
 }
