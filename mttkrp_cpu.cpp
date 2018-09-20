@@ -100,6 +100,8 @@ int MTTKRP_HCSR_CPU(const Tensor &X, Matrix *U, const Options &Opt){
         }
     }
 }
+
+
 int MTTKRP_HCSR_CPU_4D(const Tensor &X, Matrix *U, const Options &Opt){
         
     ITYPE mode0 = X.modeOrder[0];
@@ -125,8 +127,7 @@ int MTTKRP_HCSR_CPU_4D(const Tensor &X, Matrix *U, const Options &Opt){
 
         // #pragma omp for
         for(ITYPE slc = 0; slc < X.fbrIdx[0].size(); ++slc) {
-            
-     
+               
             memset(outBuffer, 0, R * sizeof(DTYPE));
             
             for (int fbrS = X.fbrPtr[0][slc]; fbrS <  X.fbrPtr[0][slc+1]; ++fbrS){
@@ -135,8 +136,7 @@ int MTTKRP_HCSR_CPU_4D(const Tensor &X, Matrix *U, const Options &Opt){
                 memset(outBuffer1, 0, R * sizeof(DTYPE));
                 
                 for (int fbr = X.fbrPtr[1][fbrS]; fbr < X.fbrPtr[1][fbrS+1]; ++fbr){        
-     
-              
+             
                     memset(tmp_val, 0, R * sizeof(DTYPE));
                      
                     for(ITYPE x = X.fbrPtr[2][fbr]; x < X.fbrPtr[2][fbr+1]; ++x) {
@@ -155,8 +155,127 @@ int MTTKRP_HCSR_CPU_4D(const Tensor &X, Matrix *U, const Options &Opt){
                     outBuffer[r] += outBuffer1[r] * U1[idx1 * R + r];   
             }
             ITYPE idx0 = X.fbrIdx[0][slc];
+
             for(ITYPE r=0; r<R; ++r) 
                 U0[idx0 * R + r] += outBuffer[r];
+        }
+    }
+}
+
+int MTTKRP_HYB_HCSR_CPU_4D(const HYBTensor &X, Matrix *U, const Options &Opt){
+        
+    ITYPE mode0 = X.modeOrder[0];
+    ITYPE mode1 = X.modeOrder[1];
+    ITYPE mode2 = X.modeOrder[2];
+    ITYPE mode3 = X.modeOrder[3];
+    ITYPE R = Opt.R;
+
+     // MTTKRP_HCSR_CPU_RSTRCT(const Tensor &X, U[], const Options &Opt)
+    DTYPE * U0 = U[mode0].vals;
+    DTYPE const * const  U1 = U[mode1].vals;
+    DTYPE const * const  U2 = U[mode2].vals;
+    DTYPE const * const  U3 = U[mode3].vals;
+
+    // ITYPE const * const __restrict__ arrIdx2 = &(X.inds[mode2][0]);
+  
+    // #pragma omp parallel
+    {    
+                    
+        DTYPE *tmp_val = new DTYPE[R];
+        DTYPE *outBuffer = new DTYPE[R];
+        DTYPE *outBuffer1 = new DTYPE[R];
+
+        // #pragma omp for
+        for(ITYPE slc = 0; slc < X.fbrIdx[0].size(); ++slc) {
+               
+            memset(outBuffer, 0, R * sizeof(DTYPE));
+            
+            for (int fbrS = X.fbrPtr[0][slc]; fbrS <  X.fbrPtr[0][slc+1]; ++fbrS){
+
+         
+                memset(outBuffer1, 0, R * sizeof(DTYPE));
+                
+                for (int fbr = X.fbrPtr[1][fbrS]; fbr < X.fbrPtr[1][fbrS+1]; ++fbr){        
+             
+                    memset(tmp_val, 0, R * sizeof(DTYPE));
+                     
+                    for(ITYPE x = X.fbrPtr[2][fbr]; x < X.fbrPtr[2][fbr+1]; ++x) {
+                        
+                        ITYPE idx3 = X.inds[mode3][x];  
+            
+                        for(ITYPE r=0; r<R; ++r) 
+                            tmp_val[r] += X.vals[x] * U3[idx3 * R + r]; 
+                    } 
+                    ITYPE idx2 = X.fbrIdx[2][fbr];              
+                    for(ITYPE r=0; r<R; ++r) 
+                        outBuffer1[r] += tmp_val[r] * U2[idx2 * R + r];    
+                } 
+                ITYPE idx1 = X.fbrIdx[1][fbrS]; 
+                for(ITYPE r=0; r<R; ++r) 
+                    outBuffer[r] += outBuffer1[r] * U1[idx1 * R + r];   
+            }
+            ITYPE idx0 = X.fbrIdx[0][slc];
+
+            for(ITYPE r=0; r<R; ++r) 
+                U0[idx0 * R + r] += outBuffer[r];
+        }
+    }
+}
+
+int MTTKRP_HYB_COO_CPU_naive(const HYBTensor &HybX, Matrix *U, const Options &Opt){
+
+    ITYPE R = Opt.R;
+    // #pragma omp parallel for //reduction(+:U[0].vals[:R])
+    ITYPE mode0 = HybX.modeOrder[0];
+    ITYPE mode1 = HybX.modeOrder[1];
+    ITYPE mode2 = HybX.modeOrder[2];
+    
+    // COO PART
+    #pragma omp parallel 
+    {
+        #pragma omp for
+        for(ITYPE x = 0; x < HybX.COOnnz; ++x) {
+
+            DTYPE tmp_val = 0;
+            ITYPE idx0 = HybX.COOinds[mode0][x];
+            ITYPE idx1 = HybX.COOinds[mode1][x];
+            ITYPE idx2 = HybX.COOinds[mode2][x];
+           
+            // #pragma omp atomic
+            for(ITYPE r=0; r<R; ++r) {            
+                tmp_val = HybX.COOvals[x] * U[mode1].vals[idx1 * R + r] * U[mode2].vals[idx2 * R + r];
+                U[mode0].vals[idx0 * R + r] += tmp_val;
+            }
+        }
+    }
+}
+
+int MTTKRP_HYB_COO_CPU_naive_4D(const HYBTensor &HybX, Matrix *U, const Options &Opt){
+
+    ITYPE R = Opt.R;
+    // #pragma omp parallel for //reduction(+:U[0].vals[:R])
+    ITYPE mode0 = HybX.modeOrder[0];
+    ITYPE mode1 = HybX.modeOrder[1];
+    ITYPE mode2 = HybX.modeOrder[2];
+    ITYPE mode3 = HybX.modeOrder[3];
+    
+    // COO PART
+    #pragma omp parallel 
+    {
+        #pragma omp for
+        for(ITYPE x = 0; x < HybX.COOnnz; ++x) {
+
+            DTYPE tmp_val = 0;
+            ITYPE idx0 = HybX.COOinds[mode0][x];
+            ITYPE idx1 = HybX.COOinds[mode1][x];
+            ITYPE idx2 = HybX.COOinds[mode2][x];
+            ITYPE idx3 = HybX.COOinds[mode3][x];
+           
+            // #pragma omp atomic
+            for(ITYPE r=0; r<R; ++r) {            
+                tmp_val = HybX.COOvals[x] * U[mode1].vals[idx1 * R + r] * U[mode2].vals[idx2 * R + r] *  U[mode3].vals[idx3 * R + r];
+                U[mode0].vals[idx0 * R + r] += tmp_val;
+            }
         }
     }
 }
@@ -245,30 +364,24 @@ int MTTKRP_HYB_CSL_CPU( HYBTensor &HybX, Matrix *U, Options &Opt){
 
 int MTTKRP_HYB_CPU( HYBTensor &HybX, Matrix *U, Options &Opt){
 
-    ITYPE R = Opt.R;
-    // #pragma omp parallel for //reduction(+:U[0].vals[:R])
-    ITYPE mode0 = HybX.modeOrder[0];
-    ITYPE mode1 = HybX.modeOrder[1];
-    ITYPE mode2 = HybX.modeOrder[2];
-    
-    // COO PART
-    for(ITYPE x = 0; x < HybX.COOnnz; ++x) {
-
-        DTYPE tmp_val = 0;
-        ITYPE idx0 = HybX.COOinds[mode0][x];
-        ITYPE idx1 = HybX.COOinds[mode1][x];
-        ITYPE idx2 = HybX.COOinds[mode2][x];
-       
-        // #pragma omp atomic
-        for(ITYPE r=0; r<R; ++r) {            
-            tmp_val = HybX.COOvals[x] * U[mode1].vals[idx1 * R + r] * U[mode2].vals[idx2 * R + r];
-            U[mode0].vals[idx0 * R + r] += tmp_val;
-        }
-    }
+    // COO part
+    MTTKRP_HYB_COO_CPU_naive(HybX, U, Opt);
     // CSSL part
     MTTKRP_HYB_CSL_CPU(HybX, U, Opt);
     // HCSR part
     MTTKRP_HYB_HCSR_CPU(HybX, U, Opt);
+
+}
+
+int MTTKRP_HYB_CPU_4D( HYBTensor &HybX, Matrix *U, Options &Opt){
+    cout << "HYB CPU " << endl;
+    // COO part
+    MTTKRP_HYB_COO_CPU_naive_4D(HybX, U, Opt);
+    // not using CSSL part for 4D
+    // MTTKRP_HYB_CSL_CPU(HybX, U, Opt);
+
+    /* HCSR part */
+    MTTKRP_HYB_HCSR_CPU_4D(HybX, U, Opt);
 
 }
 
@@ -346,6 +459,69 @@ int MTTKRP_TILED_HCSR_CPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
                 }
                 for(ITYPE r=0; r<R; ++r) 
                     U[mode0].vals[idx0 * R + r] += outBuffer[r]; //U0[idx0 * R + r]               
+            }
+        }
+    }
+} 
+
+
+
+int MTTKRP_TILED_HCSR_CPU_4D(TiledTensor *TiledX, Matrix *U, const Options &Opt){
+        
+    ITYPE mode0 = TiledX[0].modeOrder[0];
+    ITYPE mode1 = TiledX[0].modeOrder[1];
+    ITYPE mode2 = TiledX[0].modeOrder[2];
+    ITYPE mode3 = TiledX[0].modeOrder[3];
+    ITYPE R = Opt.R;
+
+     // MTTKRP_HCSR_CPU_RSTRCT(const Tensor &X, U[], const Options &Opt)
+    DTYPE * U0 = U[mode0].vals;
+    DTYPE const * const  U1 = U[mode1].vals;
+    DTYPE const * const  U2 = U[mode2].vals;
+    DTYPE const * const  U3 = U[mode3].vals;
+
+    // ITYPE const * const __restrict__ arrIdx2 = &(TiledX[tile].inds[mode2][0]);
+    for (int tile = 0; tile < Opt.nTile; ++tile){  
+        // #pragma omp parallel
+        {    
+                        
+            DTYPE *tmp_val = new DTYPE[R];
+            DTYPE *outBuffer = new DTYPE[R];
+            DTYPE *outBuffer1 = new DTYPE[R];
+
+            // #pragma omp for
+            for(ITYPE slc = 0; slc < TiledX[tile].fbrIdx[0].size(); ++slc) {
+                
+         
+                memset(outBuffer, 0, R * sizeof(DTYPE));
+                
+                for (int fbrS = TiledX[tile].fbrPtr[0][slc]; fbrS <  TiledX[tile].fbrPtr[0][slc+1]; ++fbrS){
+
+             
+                    memset(outBuffer1, 0, R * sizeof(DTYPE));
+                    
+                    for (int fbr = TiledX[tile].fbrPtr[1][fbrS]; fbr < TiledX[tile].fbrPtr[1][fbrS+1]; ++fbr){        
+                 
+                        memset(tmp_val, 0, R * sizeof(DTYPE));
+                         
+                        for(ITYPE x = TiledX[tile].fbrPtr[2][fbr]; x < TiledX[tile].fbrPtr[2][fbr+1]; ++x) {
+                            
+                            ITYPE idx3 = TiledX[tile].inds[mode3][x];  
+                
+                            for(ITYPE r=0; r<R; ++r) 
+                                tmp_val[r] += TiledX[tile].vals[x] * U3[idx3 * R + r]; 
+                        } 
+                        ITYPE idx2 = TiledX[tile].fbrIdx[2][fbr];              
+                        for(ITYPE r=0; r<R; ++r) 
+                            outBuffer1[r] += tmp_val[r] * U2[idx2 * R + r];    
+                    } 
+                    ITYPE idx1 = TiledX[tile].fbrIdx[1][fbrS]; 
+                    for(ITYPE r=0; r<R; ++r) 
+                        outBuffer[r] += outBuffer1[r] * U1[idx1 * R + r];   
+                }
+                ITYPE idx0 = TiledX[tile].fbrIdx[0][slc];
+                for(ITYPE r=0; r<R; ++r) 
+                    U0[idx0 * R + r] += outBuffer[r];
             }
         }
     }

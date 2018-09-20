@@ -60,8 +60,8 @@ int main(int argc, char* argv[]){
     // HCSR CPU   
     else if(Opt.impType == 2){
         create_HCSR(X, Opt);  
-        print_COOtensor(X); 
-        ((X.ndims == 3) ? print_HCSRtensor(X) : print_HCSRtensor_4D(X));          
+        // print_COOtensor(X); 
+        // ((X.ndims == 3) ? print_HCSRtensor(X) : print_HCSRtensor_4D(X));          
         double t0 = seconds();
         ((X.ndims == 3) ?  MTTKRP_HCSR_CPU(X, U, Opt) :  MTTKRP_HCSR_CPU_4D(X, U, Opt));   
         printf("gcc no opt : HCSR CPU - time: %.3f sec \n", seconds() - t0);
@@ -75,20 +75,21 @@ int main(int argc, char* argv[]){
     // HCSR GPU  
     else if(Opt.impType == 4){
         create_HCSR(X, Opt);
-        make_Bin(X, Opt);
         MTTKRP_HCSR_GPU(X, U, Opt);
     }
     // HYB CPU
     else if(Opt.impType == 9){
-        // print_COOtensor(X);
         create_HCSR(X, Opt);
-         // print_HCSRtensor(X);
         HYBTensor HybX(X);
-        create_HYB(HybX, X, Opt);
+        ((X.ndims == 3) ?  create_HYB(HybX, X, Opt) :  create_HYB_4D(HybX, X, Opt));   
+        
+        // create_HYB(HybX, X, Opt);
         make_HybBin(HybX, Opt);
         // print_HYBtensor(HybX);
+        
+        // ((X.ndims == 3) ?  MTTKRP_HYB_CPU(HybX, U, Opt) :  MTTKRP_HYB_CPU_4D(HybX, U, Opt));   
         MTTKRP_HYB_GPU(HybX, U, Opt);
-        // MTTKRP_HYB_CPU(HybX, U, Opt);
+        
     }
     // // HYB GPU
     // else if(Opt.impType == 10){
@@ -134,7 +135,7 @@ int main(int argc, char* argv[]){
          // HCSR GPU  
         else if(Opt.impType == 6){
             double t0 = seconds();
-            MTTKRP_TILED_HCSR_CPU(TiledX, U, Opt); 
+            ((X.ndims == 3) ? MTTKRP_TILED_HCSR_CPU(TiledX, U, Opt) : MTTKRP_TILED_HCSR_CPU_4D(TiledX, U, Opt)); 
             printf("TILED HCSR CPU - time: %.3f sec \n", seconds() - t0); 
         }  
 
