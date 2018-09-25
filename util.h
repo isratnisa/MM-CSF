@@ -505,7 +505,7 @@ inline int create_HYB(HYBTensor &HybX, const Tensor &X, const Options &Opt){
         
         if(sliceNnz == 1){       
             int idx =  X.fbrPtr[1][X.fbrPtr[0][slc]];
-            HybX.COOinds[mode0].push_back(slc);
+            HybX.COOinds[mode0].push_back(X.fbrIdx[0][slc]);
             HybX.COOinds[mode1].push_back(X.fbrIdx[1][stFiber]);
             HybX.COOinds[mode2].push_back(X.inds[mode2][idx]); 
             HybX.COOvals.push_back(X.vals[idx]);  
@@ -959,24 +959,26 @@ inline int make_HybBin(HYBTensor &X, const Options & Opt){
             }
         }
     }
-    // // // Populate CSL bin
-    // for(ITYPE slc = 0; slc < X.CSLsliceIdx.size(); ++slc) {
+    // // Populate CSL bin
+    if(X.ndims == 3)  {
+        for(ITYPE slc = 0; slc < X.CSLsliceIdx.size(); ++slc) {
 
-    //     int fb_st = X.CSLslicePtr[slc];
-    //     int fb_end = X.CSLslicePtr[slc+1];
-    //     int nnzSlc = fb_end - fb_st; //nnz = nfibers
-     
-    //     // #pragma omp parallel
-    //     // {
-    //     // unsigned int cpu_thread_id = omp_get_thread_num();
-    //     // int i = cpu_thread_id;
-    //     for (int bin = 0; bin < Opt.nBin; ++bin)  {
+            int fb_st = X.CSLslicePtr[slc];
+            int fb_end = X.CSLslicePtr[slc+1];
+            int nnzSlc = fb_end - fb_st; //nnz = nfibers
+         
+            // #pragma omp parallel
+            // {
+            // unsigned int cpu_thread_id = omp_get_thread_num();
+            // int i = cpu_thread_id;
+            for (int bin = 0; bin < Opt.nBin; ++bin)  {
 
-    //         if (nnzSlc > LB[bin] && nnzSlc < UB[bin]) {
-    //             X.CSLslcMapperBin[bin].push_back(slc);
-    //         }
-    //     }
-    // }
+                if (nnzSlc > LB[bin] && nnzSlc < UB[bin]) {
+                    X.CSLslcMapperBin[bin].push_back(slc);
+                }
+            }
+        }
+    }
 
     if(Opt.verbose){
         for (int bin = 0; bin < Opt.nBin; ++bin)  
