@@ -9,7 +9,7 @@ CXXFLAGS=-O3 -std=c++11 -g -fopenmp
 # -DUSE_RESTRICT
 #NVCCFLAGS +=-O3 -fopenmp -w -restrict #--ptxas-options=-v
 
-NVCCFLAGS += -O3 -w -arch=sm_37 -rdc=true -Xptxas -dlcm=ca -Xcompiler -fopenmp --std=c++11 -m64 -lineinfo #–default-stream #per-thread #-g #-G
+NVCCFLAGS += -O3 -w -gencode arch=compute_37,code=sm_37 -rdc=true -Xptxas -dlcm=ca -Xcompiler -fopenmp --std=c++11 -m64 -lineinfo #–default-stream #per-thread #-g #-G
 NVCCLINKFLAGS = -L$(NVCC_LIB_PATH) -lcudart
 # nvcc -ccbin=/cm/shared/apps/intel/compilers_and_libraries_2016.3.210/linux/bin/intel64/icc -std=c++11 -o t912 t912.cu
 all: mttkrp

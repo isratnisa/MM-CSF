@@ -1,11 +1,6 @@
 #ifndef GPU_H
 #define GPU_H
 
-	// ** Hard coded is faster
-// unsigned int workId = (tId & 127) >> 5;  
-// unsigned int slc = gId >> 7;
-// unsigned int shRow = slc >> rowInATB;
-
 inline cudaError_t checkCuda(cudaError_t result, int s){
 
   if (result != cudaSuccess) {
@@ -13,6 +8,16 @@ inline cudaError_t checkCuda(cudaError_t result, int s){
     assert(result == cudaSuccess);
   }
   return result;
+}
+
+void cuda_timer_start(cudaEvent_t start){
+	checkCuda(cudaEventRecord(start), __LINE__);
+}
+void cuda_timer_stop(cudaEvent_t start, cudaEvent_t stop, float &mili){
+	checkCuda(cudaEventRecord(stop), __LINE__);
+    cudaEventSynchronize(stop);
+    checkCuda(cudaEventElapsedTime(&mili, start, stop), __LINE__);
+    cudaDeviceSynchronize();
 }
 
 // CUDA kernel call to do COO MTTKRP 
@@ -334,7 +339,6 @@ __global__ void mttkrp_HCSR_kernel_smllBin(DTYPE * vals, ITYPE *dfbrIdx0, ITYPE 
 	}
 }
 
-
 // CUDA kernel call to do HCSR MTTKRP 
 __global__ void mttkrp_HCSR_kernel_smllBin_4D(DTYPE * vals, ITYPE *dfbrIdx0, ITYPE *dSlcMapperBin, ITYPE *dInds3, ITYPE *fbrPtr0,
 	ITYPE *fbrPtr1, ITYPE *fbrIdx1, ITYPE *fbrPtr2, ITYPE *fbrIdx2, unsigned int nSlices, DTYPE *dU0, DTYPE * dU1, DTYPE *dU2, DTYPE *dU3, 
@@ -564,16 +568,15 @@ int MTTKRP_COO_GPU(const Tensor &X, Matrix *U, const Options Opt){
     float mili = 0;
 
 	// CUDA call
-	checkCuda(cudaEventRecord(start), __LINE__);
+	cuda_timer_start(start);
+
 	if(X.ndims == 3)
 		mttkrp_COO_kernel<<<grid, block>>>(dVals, dInds0, dInds1, dInds2, X.totNnz, dU0, dU1, dU2, mode, R); 
 	if(X.ndims == 4)
 		mttkrp_COO_kernel_4D<<<grid, block>>>(dVals, dInds0, dInds1, dInds2, dInds3, X.totNnz, dU0, dU1, dU2, dU3, mode, R); 
-	checkCuda(cudaEventRecord(stop), __LINE__);
-    cudaEventSynchronize(stop);
-    //cudaDeviceSynchronize();
-    checkCuda(cudaEventElapsedTime(&mili, start, stop), __LINE__);
-    cudaDeviceSynchronize();
+	
+	cuda_timer_stop(start, stop, mili);
+
     cout << "COO GPU - time " << mili << "ms"<< endl;
 
 	// check correctness
@@ -588,7 +591,7 @@ int MTTKRP_COO_GPU(const Tensor &X, Matrix *U, const Options Opt){
 }
 int MTTKRP_HCSR_GPU(Tensor &X, Matrix *U, const Options &Opt){
 	//allocate and memcpy GPU memory
-cout << "FIX fiber idx" << endl;
+	cout << "FIX fiber idx" << endl;
 	//Tensor
 	ITYPE *dInds2, *dInds3, *dfbrPtr0, *dfbrIdx0, *dfbrPtr1, *dfbrIdx1, *dFbrPtr2, *dFbrIdx2, *dSlcMapperBin;
 	DTYPE *dVals;
@@ -1135,17 +1138,20 @@ int MTTKRP_HYB_GPU(const HYBTensor &HybX, Matrix *U, const Options &Opt){
 		exit(0);
 	}
 
-    cudaEvent_t start, stop;
+    cudaEvent_t start, stop, HYBstart, HYBstop;
     cudaEventCreate(&start);
     cudaEventCreate(&stop);
+    cudaEventCreate(&HYBstart);
+    cudaEventCreate(&HYBstop);
 
     cudaStream_t streams[2 * Opt.nBin + 1];
 	for (int bin = 0; bin < 2 * Opt.nBin + 1; ++bin)
 		cudaStreamCreate(&streams[bin]);
 
-    float mili = 0, GPUTime = 0, CPUtimer = 0, HYBTime = 0;
-
+    float mili = 0, HYBmili =0, GPUTime = 0, CPUtimer = 0, HYBTime = 0;
 	dLoc = 0, dSlcLoc = 0, dSlcIdxLoc = 0; dFbrLoc =0;
+
+	cuda_timer_start(HYBstart);
 
 	// ******* CUDA COO *******
 
@@ -1155,52 +1161,38 @@ int MTTKRP_HYB_GPU(const HYBTensor &HybX, Matrix *U, const Options &Opt){
 		block.x = BLOCKSIZE;
 		grid.x = (32 * HybX.COOnnz + BLOCKSIZE - 1) / BLOCKSIZE;
 
-		// CUDA call
-		checkCuda(cudaEventRecord(start), __LINE__);
+		if(Opt.verbose) 
+			cuda_timer_start(start);
+  		
   		if(HybX.ndims == 3)
 			mttkrp_HYB_COO_kernel<<<grid, block, 0, 0>>>(dCOOVals, dCOOInds0, dCOOInds1, dCOOInds2, HybX.COOnnz, dU0, dU1, dU2,
 				Opt.mode, Opt.R); 
 		else if (HybX.ndims == 4)
 			mttkrp_HYB_COO_kernel_4D<<<grid, block, 0, 0>>>(dCOOVals, dCOOInds0, dCOOInds1, dCOOInds2,dCOOInds3, HybX.COOnnz, dU0, dU1, dU2, dU3,
 				Opt.mode, Opt.R); 
-
-		checkCuda(cudaEventRecord(stop), __LINE__);
-	    cudaEventSynchronize(stop);
-	    //cudaDeviceSynchronize();
-	    checkCuda(cudaEventElapsedTime(&mili, start, stop), __LINE__);
-	    cudaDeviceSynchronize();
-	    HYBTime += mili;
-	    if(Opt.verbose)
-	    	cout << "COO GPU " << mili << "ms"<< endl;
-
+		
+	    if(Opt.verbose){
+	    	cuda_timer_stop(start, stop, mili);
+	    	HYBTime += mili;
+	    	cout << "HYB-COO GPU " << mili << "ms"<< endl;
+	    }
 	}
 	// ******* CUDA CSL *******
 
 	if(HybX.CSLnnz > 0){
-
 
 		int slcPerTb = 0;
 
 		BLOCKSIZE = 512;
 		block.x = BLOCKSIZE;
 
-		warpPerSlice = 2;
-		logOfWarpPerSlice = log2(warpPerSlice);
-		grid.x = ( TbPerSlc * warpPerSlice * 32 * HybX.CSLsliceIdx.size() + BLOCKSIZE - 1) / BLOCKSIZE;
-		mili = 0; 
+		// mili = 0; 
 		dCSLBinLoc = 0;
 
 		int smallBinEndsAt = 5;
-	    checkCuda(cudaEventRecord(start), __LINE__);
-
-		// mttkrp_CSL_kernel<<<grid, block>>>(dCSLVals, dCSLSlcInds, dSlcMapperBin, dCSLInds2, dCSLSlcPtr, 
-		// 	dCSLInds1, HybX.CSLsliceIdx.size(), dU0, dU1, dU2,Opt.mode, Opt.R, warpPerSlice, logOfWarpPerSlice, TbPerSlc, logOfTPS); 
-
-		// checkCuda(cudaEventRecord(stop), __LINE__);
-	 //    cudaEventSynchronize(stop);
-	 //    checkCuda(cudaEventElapsedTime(&mili, start, stop), __LINE__);
-	 //    cudaDeviceSynchronize();
-	 //    HYBTime += mili;
+	    
+	    if(Opt.verbose) 
+			cuda_timer_start(start);
 		
 		for (int bin = 0; bin < Opt.nBin ; ++bin){
 
@@ -1218,7 +1210,7 @@ int MTTKRP_HYB_GPU(const HYBTensor &HybX, Matrix *U, const Options &Opt){
 				// if(warpPerSlice > 16)		
 				//	warpPerSlice = 16;
 				warpPerSlice = 1;
-				logOfWarpPerSlice = log2(warpPerSlice);
+				logOfWarpPerSlice = 0;//log2(warpPerSlice);
 				slcPerTb = 16 / warpPerSlice;
 
 				grid.x = ( TbPerSlc * warpPerSlice * 32 * HybX.CSLslcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
@@ -1244,35 +1236,30 @@ int MTTKRP_HYB_GPU(const HYBTensor &HybX, Matrix *U, const Options &Opt){
 				mttkrp_CSL_kernel_hvyBin<<<grid, block, 0, streams[bin+1]>>>(dCSLVals + dLoc, dCSLSlcInds + dSlcIdxLoc, dCSLSlcMapperBin + dSlcIdxLoc + dCSLBinLoc, 
 					dCSLInds2 + dLoc, dCSLSlcPtr + dSlcLoc, dCSLInds1, HybX.CSLslcMapperBin[bin].size(), 
 					dU0, dU1, dU2, Opt.mode, Opt.R, warpPerSlice, logOfWarpPerSlice,  TbPerSlc, logOfTPS); 
-
 			}
-
 		}
-		checkCuda(cudaEventRecord(stop), __LINE__);
-	    cudaEventSynchronize(stop);
-	    checkCuda(cudaEventElapsedTime(&mili, start, stop), __LINE__);
-	    cudaDeviceSynchronize();
-	    HYBTime += mili;
-	    if(Opt.verbose)
-	    	cout << "CSL GPU " << mili << "ms"<< endl;
+
+	    if(Opt.verbose){
+	    	cuda_timer_stop(start, stop, mili);
+	    	HYBTime += mili;
+	    	cout << "HYB-CSL GPU " << mili << "ms"<< endl;
+	    }
 	}
 
 	// ******* CUDA HSCR *******
 
 	if(HybX.HCSRnnz > 0){
+		
 		dBinLoc = 0;
-
 		BLOCKSIZE = 512;
 		block.x = BLOCKSIZE;
 
 		int smallBinEndsAt = 5;
 		
 		int slcPerTb = 0;
-
-		// Process small bins.. accepts 2 slice 1 TB
-		mili = 0 ;
-		double t0 = seconds();
-		checkCuda(cudaEventRecord(start), __LINE__);
+		
+		if(Opt.verbose) 
+			cuda_timer_start(start);
 		
 		for (int bin = 0; bin < Opt.nBin ; ++bin){
 
@@ -1285,24 +1272,22 @@ int MTTKRP_HYB_GPU(const HYBTensor &HybX, Matrix *U, const Options &Opt){
 
 				TbPerSlc = 1;
 
-				warpPerSlice = ((bin > 0) ? 2 << (bin - 1) : 1);
+				warpPerSlice = 1;//((bin > 0) ? 2 << (bin - 1) : 1);
 
-				if(warpPerSlice > 16)		
-					warpPerSlice = 16;
-				logOfWarpPerSlice = log2(warpPerSlice);
+				// if(warpPerSlice > 16)		
+				// 	warpPerSlice = 16;
+				logOfWarpPerSlice = 0;//log2(warpPerSlice);
 				slcPerTb = 16 / warpPerSlice;
-
-				ITYPE shSize = 0;//slcPerTb * 32 * sizeof(DTYPE);
 
 				grid.x = ( TbPerSlc * warpPerSlice * 32 * HybX.slcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
 
 				if(HybX.ndims == 3)
-					mttkrp_HCSR_kernel_smllBin<<<grid, block, shSize , streams[bin+11]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
+					mttkrp_HCSR_kernel_smllBin<<<grid, block, 0, streams[bin+11]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
 					dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, HybX.slcMapperBin[bin].size(), 
 					dU0, dU1, dU2, Opt.mode, Opt.R, warpPerSlice, logOfWarpPerSlice, TbPerSlc, logOfTPS); 
 				
 				else if(HybX.ndims == 4)
-					mttkrp_HCSR_kernel_smllBin_4D<<<grid, block, shSize , streams[bin+11]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
+					mttkrp_HCSR_kernel_smllBin_4D<<<grid, block, 0, streams[bin+11]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
 					dInds3 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, dFbrPtr2 + dFbrLoc2, dFbrIdx2 + dFbrLoc2, HybX.slcMapperBin[bin].size(), 
 					dU0, dU1, dU2, dU3, Opt.mode, Opt.R, warpPerSlice, logOfWarpPerSlice, TbPerSlc, logOfTPS); 
 			}
@@ -1325,23 +1310,24 @@ int MTTKRP_HYB_GPU(const HYBTensor &HybX, Matrix *U, const Options &Opt){
 					dU0, dU1, dU2, Opt.mode, Opt.R, warpPerSlice, logOfWarpPerSlice,  TbPerSlc, logOfTPS); 
 				
 				else if(HybX.ndims == 4)
-                    mttkrp_HCSR_kernel_hvyBin_4D<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
+                    mttkrp_HCSR_kernel_hvyBin_4D<<<grid, block, 0, streams[bin + 11]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
                     dInds3 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc, dfbrIdx1 + dFbrIdxLoc, dFbrPtr2 + dFbrLoc2, dFbrIdx2 + dFbrLoc2, HybX.slcMapperBin[bin].size(), 
                     dU0, dU1, dU2, dU3, Opt.mode, Opt.R, warpPerSlice, logOfWarpPerSlice,  TbPerSlc, logOfTPS); 
 			}
-
 		}
-		checkCuda(cudaEventRecord(stop), __LINE__);
-	    cudaEventSynchronize(stop);
-	    checkCuda(cudaEventElapsedTime(&mili, start, stop), __LINE__);
-	    CPUtimer += seconds() - t0;
-	    cudaDeviceSynchronize();
 
-	    HYBTime += mili;
-	  	if(Opt.verbose)
-			cout << "HCSR GPU: " << mili << endl;
+	    if(Opt.verbose){
+	    	cuda_timer_stop(start, stop, mili);
+	    	HYBTime += mili;
+	    	cout << "HYB-HCSR GPU " << mili << "ms"<< endl;
+	    }
 	}
-	cout << "HYB GPU: " << HYBTime << endl;
+
+	cuda_timer_stop(HYBstart, HYBstop, HYBmili);
+	if(Opt.verbose)
+		cout << "verbose on. HYB GPU: " << HYBTime << endl;
+	else
+		cout << "HYB GPU: " << HYBmili << endl;
 
 	for (int bin = 0; bin < 2 * Opt.nBin + 1; ++bin)
 		cudaStreamDestroy(streams[bin]);

@@ -17,16 +17,16 @@
 using namespace std;
 
 class Tensor{
-	public:
-		ITYPE ndims;
-		ITYPE *dims;
+    public:
+        ITYPE ndims;
+        ITYPE *dims;
         ITYPE totNnz;
         ITYPE nFibers;
         ITYPE *accessK;
         bool switchBC = false; // if true change matrix rand() to 1
         std::vector<ITYPE> modeOrder;
-		std::vector<vector<ITYPE>> inds;
-		std::vector<DTYPE> vals;
+        std::vector<vector<ITYPE>> inds;
+        std::vector<DTYPE> vals;
         std::vector<vector<ITYPE>> fbrPtr;
         std::vector<vector<ITYPE>> fbrIdx;
         std::vector<vector<ITYPE>> slcMapperBin;
@@ -141,16 +141,16 @@ inline int load_tensor(Tensor &X, const Options &Opt){
 
     ITYPE switchMode;
 
-	ifstream fp(filename); 
+    ifstream fp(filename); 
 
     if(fp.fail()){
         cout << filename << " does not exist!" << endl;
         exit(0);
     }
 
-	fp >> X.ndims; 
+    fp >> X.ndims; 
 
-	X.dims = new ITYPE[X.ndims];
+    X.dims = new ITYPE[X.ndims];
 
     for (int i = 0; i < X.ndims; ++i){
         // mode 0 never switches
@@ -165,29 +165,29 @@ inline int load_tensor(Tensor &X, const Options &Opt){
         X.modeOrder.push_back((switchMode + Opt.mode) % X.ndims);
     }
 
-	for (int i = 0; i < X.ndims; ++i){
+    for (int i = 0; i < X.ndims; ++i){
         // mode 0 never switches
-		fp >> X.dims[i];      
-		X.inds.push_back(std::vector<ITYPE>());
-	}
+        fp >> X.dims[i];      
+        X.inds.push_back(std::vector<ITYPE>());
+    }
 
-	while(fp >> index) {
+    while(fp >> index) {
         X.inds[0].push_back(index-1);
-		for (int i = 1; i < X.ndims; ++i)
-		{      
-			fp >> index;
-			X.inds[i].push_back(index-1);   
-		}
-		fp >> vid;
-		X.vals.push_back(vid);
+        for (int i = 1; i < X.ndims; ++i)
+        {      
+            fp >> index;
+            X.inds[i].push_back(index-1);   
+        }
+        fp >> vid;
+        X.vals.push_back(vid);
 
-	}
+    }
     X.totNnz = X.vals.size();
 
-	// for (int i = 0; i < X.totNnz; ++i)
-	// {
-	// 	cout << X.inds[0][i] << " " << X.inds[1][i] << " "<< X.inds[2][i] <<endl;
-	// }
+    // for (int i = 0; i < X.totNnz; ++i)
+    // {
+    //  cout << X.inds[0][i] << " " << X.inds[1][i] << " "<< X.inds[2][i] <<endl;
+    // }
     //    cout << "nnz " << X.totNnz << endl;
     return 0;
 }
@@ -605,8 +605,7 @@ inline int create_HYB_4D(HYBTensor &HybX, const Tensor &X, const Options &Opt){
         int endFiber =  X.fbrPtr[0][slc+1];
         
         if(sliceNnz == 1){       
-
-            HybX.COOinds[mode0].push_back(slc);
+            HybX.COOinds[mode0].push_back(X.fbrIdx[0][slc]);
 
             int fbrSIdx =  X.fbrPtr[0][slc];
             HybX.COOinds[mode1].push_back(X.fbrIdx[1][fbrSIdx]);
@@ -673,88 +672,6 @@ inline int create_HYB_4D(HYBTensor &HybX, const Tensor &X, const Options &Opt){
     }
     return 0;
 }
-//  creating pointers and fiber indices for 3D tensors
-// Replace all X by TiledX[tile].. otherwise no diff
-// inline int create_TiledHCSR(TiledTensor *TiledX, const Options &Opt){
-
-//     ITYPE fbrThreashold = Opt.fbrThreashold;
-
-//     for (int i = 0; i < X.ndims - 1; ++i){
-//         X.fbrPtr.push_back(std::vector<ITYPE>());
-//         X.fbrIdx.push_back(std::vector<ITYPE>());
-//     }
-    
-//     ITYPE mode0 = X.modeOrder[0];
-//     ITYPE mode1 = X.modeOrder[1];
-//     ITYPE mode2 = X.modeOrder[2];
-//     // ITYPE mode3 = X.modeOrder[3];
-
-//     std::vector<ITYPE> prevId(X.ndims-1);
-//     std::vector<ITYPE> fbrId(X.ndims-1);
-
-//     for (int i = 0; i < X.ndims-1; ++i){
-//         prevId[i] =  X.inds[X.modeOrder[i]][0];
-//         X.fbrPtr[i].push_back(0);
-//         X.fbrIdx[i].push_back(prevId[i]);
-//     }
-    
-//     int idx = 1 ;
-    
-//     while(idx < X.totNnz) {
-
-//         for (int i = 0; i < X.ndims-1; ++i) 
-//             fbrId[i] = X.inds[X.modeOrder[i]][idx];
-   
-//         ITYPE fiberNnz = 1;
-//         bool sameFbr = true;
-
-//         for (int i = 0; i < X.ndims-1; ++i) {
-//             if(fbrId[i] != prevId[i])
-//                 sameFbr = false;
-//         }
-  
-//         while( sameFbr && idx < X.totNnz && fiberNnz < fbrThreashold){
-//             ++idx;
-//             fiberNnz++;
-//             for (int i = 0; i < X.ndims-1; ++i) {
-//                 fbrId[i] = X.inds[X.modeOrder[i]][idx];   
-//                 if(fbrId[i] != prevId[i])
-//                     sameFbr = false;
-//             }
-//         }
-//         if(idx == X.totNnz)
-//             break;
-
-//         //X.ndims-2 is the last fiber ptr
-//         X.fbrPtr[X.ndims-2].push_back(idx);
-//         X.fbrIdx[X.ndims-2].push_back(fbrId[X.ndims-2]);
-
-//         // populating slice ptr and higher ptrs
-//         for (int i = X.ndims - 3; i > -1 ; --i)
-//         {
-//             if( fbrId[i] != prevId[i]) {//not else ..not become this in loop
-              
-//                 X.fbrIdx[i].push_back(fbrId[i]);
-//                 X.fbrPtr[i].push_back((ITYPE)(X.fbrPtr[i+1].size()) - 1);
-//             } 
-//         }
-     
-//         for (int i = 0; i < X.ndims-1; ++i)
-//             prevId[i] =  fbrId[i];
-
-//         ++idx;
-//         fiberNnz = 1;
-//     }
-//     X.fbrPtr[X.ndims-2].push_back(idx);
-//     X.fbrIdx[X.ndims-2].push_back(fbrId[X.ndims-2]);
-
-//     for (int i = X.ndims - 3; i > -1 ; --i)
-//         X.fbrPtr[i].push_back((ITYPE)(X.fbrPtr[i+1].size() - 1 ));
-    
-//     X.nFibers = X.fbrPtr[1].size() - 1;
-
-//     return 0;
-// }
 
 inline int create_TiledHCSR(TiledTensor *TiledX, const Options &Opt, int tile){
 
@@ -929,6 +846,7 @@ inline int make_HybBin(HYBTensor &X, const Options & Opt){
     LB[9] = 32 * TB ;   UB[9] = X.totNnz + 1;  // 512 WARP = 32 TB
 
     UB[Opt.nBin - 1] = X.totNnz + 1;
+    UB[0] = 1025; // merging bins
 
     // Populate HCSR bin
     for(ITYPE slc = 0; slc < X.fbrIdx[0].size(); ++slc) {
@@ -952,10 +870,10 @@ inline int make_HybBin(HYBTensor &X, const Options & Opt){
         // unsigned int cpu_thread_id = omp_get_thread_num();
         // int i = cpu_thread_id;
         for (int bin = 0; bin < Opt.nBin; ++bin){
-            // cout << bin << " " << LB[bin] <<" " << UB[bin] << endl;}
+            
             if (nnzSlc > LB[bin] && nnzSlc < UB[bin]) {
-
                 X.slcMapperBin[bin].push_back(slc);
+                break;
             }
         }
     }
@@ -975,12 +893,14 @@ inline int make_HybBin(HYBTensor &X, const Options & Opt){
 
                 if (nnzSlc > LB[bin] && nnzSlc < UB[bin]) {
                     X.CSLslcMapperBin[bin].push_back(slc);
+                    break;
                 }
             }
         }
     }
 
     if(Opt.verbose){
+        cout << "merged first 5 bins" << endl;
         for (int bin = 0; bin < Opt.nBin; ++bin)  
             cout << "CSL Bin "<<bin << ": " << X.CSLslcMapperBin[bin].size() << endl;
         for (int bin = 0; bin < Opt.nBin; ++bin)  

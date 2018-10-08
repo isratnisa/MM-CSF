@@ -13,16 +13,12 @@ using namespace std;
 
 int main(int argc, char* argv[]){ 
  
+    cudaDeviceSetCacheConfig(cudaFuncCachePreferL1);
     Options Opt = parse_cmd_options(argc, argv);
 
     Tensor X;
     load_tensor(X, Opt);
     // Opt.print();
-
-
-    // compute_accessK(X, Opt);
-
-    // create_write_heavy(X, Opt); //make a combined on for write and read
 
     // check if appropriate file is loaded
     string fileNameEndwith;
