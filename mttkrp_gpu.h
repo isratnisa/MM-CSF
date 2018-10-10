@@ -41,6 +41,43 @@ __global__ void mttkrp_COO_kernel(DTYPE *vals, ITYPE *dInds0, ITYPE *dInds1, ITY
         }    
 	}
 }
+
+// CUDA kernel call to do COO MTTKRP using loop
+__global__ void mttkrp_COO_kernel_loop(DTYPE * const vals, ITYPE * const dInds0, ITYPE * const dInds1, ITYPE * const dInds2,  const ITYPE nnz,
+	DTYPE *dU0, DTYPE * const dU1, DTYPE * const dU2, ITYPE	mode, ITYPE R){
+
+	unsigned int tId = threadIdx.x;
+	unsigned int laneId = tId & 31;
+	unsigned int gId = (blockIdx.x * blockDim.x + tId);
+
+	//like PARTI
+	size_t num_loops_nnz = 1 * 32;
+    size_t const nnz_per_loop = gridDim.x * blockDim.x;
+    if(nnz > nnz_per_loop) {
+        num_loops_nnz = ((nnz + nnz_per_loop - 1) / nnz_per_loop) << 5;
+    }
+
+	unsigned int x;
+
+	for(size_t nl=0; nl<num_loops_nnz; ++nl) {
+		
+		x = (gId + nl * nnz_per_loop) >> 5;
+		
+		if(x < nnz){
+	    
+	        DTYPE tmp_val = 0;
+	        ITYPE idx0 = dInds0[x];
+	        ITYPE idx1 = dInds1[x];
+	        ITYPE idx2 = dInds2[x];
+
+	        for(ITYPE r=laneId; r<R; r+=32) {           
+	            tmp_val = vals[x] * dU1[idx1 * R + r] * dU2[idx2 * R + r];
+	            atomicAdd(&dU0[idx0 * R + r], tmp_val);
+	        }  
+		}
+		__syncthreads();
+	}
+}
 // CUDA kernel call to do COO MTTKRP 4D 
 __global__ void mttkrp_COO_kernel_4D(DTYPE *vals, ITYPE *dInds0, ITYPE *dInds1, ITYPE *dInds2, ITYPE *dInds3,
     ITYPE nnz, DTYPE *dU0, DTYPE *dU1, DTYPE *dU2,  DTYPE *dU3, ITYPE mode, ITYPE R){
@@ -61,6 +98,42 @@ __global__ void mttkrp_COO_kernel_4D(DTYPE *vals, ITYPE *dInds0, ITYPE *dInds1, 
             tmp_val = vals[x] * dU1[idx1 * R + r] * dU2[idx2 * R + r]  * dU3[idx3 * R + r];
             atomicAdd(&dU0[idx0 * R + r], tmp_val);
         }    
+	}
+}
+
+// CUDA kernel call to do COO MTTKRP 4D using loop
+__global__ void mttkrp_COO_kernel_4D_loop(DTYPE *const vals, ITYPE * const dInds0, ITYPE * const dInds1, ITYPE *const dInds2, ITYPE * const dInds3,
+    ITYPE nnz, DTYPE *dU0, DTYPE * const dU1, DTYPE * const dU2,  DTYPE * const dU3, ITYPE mode, ITYPE R){
+
+	unsigned int tId = threadIdx.x;
+	unsigned int laneId = tId & 31;
+	unsigned int gId = (blockIdx.x * blockDim.x + tId);
+	
+	//like PARTI
+	size_t num_loops_nnz = 1 * 32;
+    size_t const nnz_per_loop = gridDim.x * blockDim.x;
+    if(nnz > nnz_per_loop) {
+        num_loops_nnz = ((nnz + nnz_per_loop - 1) / nnz_per_loop) << 5;
+    }
+	unsigned int x;
+
+	for(size_t nl=0; nl<num_loops_nnz; ++nl) 
+	{
+		x = (gId + nl * nnz_per_loop) >> 5;
+
+		if(x < nnz){
+	        DTYPE tmp_val = 0;
+	        ITYPE idx0 = dInds0[x];
+	        ITYPE idx1 = dInds1[x];
+	        ITYPE idx2 = dInds2[x];
+	        ITYPE idx3 = dInds3[x];
+
+	        for(ITYPE r=laneId; r<R; r+=32) {           
+	            tmp_val = vals[x] * dU1[idx1 * R + r] * dU2[idx2 * R + r]  * dU3[idx3 * R + r];
+	            atomicAdd(&dU0[idx0 * R + r], tmp_val);
+	        }
+	    }  
+	    __syncthreads();  
 	}
 }
 //no atomics because all 1 in HYB - COO 
@@ -84,6 +157,44 @@ __global__ void mttkrp_HYB_COO_kernel(DTYPE *vals, ITYPE *dInds0, ITYPE *dInds1,
         }    
 	}
 }
+
+// CUDA kernel call to do COO MTTKRP using loop
+__global__ void mttkrp_HYB_COO_kernel_loop(DTYPE * const vals, ITYPE * const dInds0, ITYPE * const dInds1, ITYPE * const dInds2,  const ITYPE nnz,
+	DTYPE *dU0, DTYPE * const dU1, DTYPE * const dU2, ITYPE	mode, ITYPE R){
+
+	unsigned int tId = threadIdx.x;
+	unsigned int laneId = tId & 31;
+	unsigned int gId = (blockIdx.x * blockDim.x + tId);
+
+	//like PARTI
+	size_t num_loops_nnz = 1 * 32;
+    size_t const nnz_per_loop = gridDim.x * blockDim.x;
+    if(nnz > nnz_per_loop) {
+        num_loops_nnz = ((nnz + nnz_per_loop - 1) / nnz_per_loop) << 5;
+    }
+
+	unsigned int x;
+
+	for(size_t nl=0; nl<num_loops_nnz; ++nl) {
+		
+		x = (gId + nl * nnz_per_loop) >> 5;
+		
+		if(x < nnz){
+	    
+	        DTYPE tmp_val = 0;
+	        ITYPE idx0 = dInds0[x];
+	        ITYPE idx1 = dInds1[x];
+	        ITYPE idx2 = dInds2[x];
+
+	        for(ITYPE r=laneId; r<R; r+=32) {           
+	            tmp_val = vals[x] * dU1[idx1 * R + r] * dU2[idx2 * R + r];
+	            dU0[idx0 * R + r] += tmp_val;
+	        }  
+		}
+		__syncthreads();
+	}
+}
+
 //no atomics because all 1 in HYB - COO 
 __global__ void mttkrp_HYB_COO_kernel_4D(DTYPE *vals, ITYPE *dInds0, ITYPE *dInds1, ITYPE *dInds2, ITYPE *dInds3,
   ITYPE nnz,  DTYPE *dU0, DTYPE *dU1, DTYPE *dU2,  DTYPE *dU3, ITYPE mode, ITYPE R){
@@ -104,6 +215,42 @@ __global__ void mttkrp_HYB_COO_kernel_4D(DTYPE *vals, ITYPE *dInds0, ITYPE *dInd
             tmp_val = vals[x] * dU1[idx1 * R + r] * dU2[idx2 * R + r] * dU3[idx3 * R + r];
             dU0[idx0 * R + r] += tmp_val;
         }    
+	}
+}
+
+// CUDA kernel call to do COO MTTKRP 4D using loop
+__global__ void mttkrp_HYB_COO_kernel_4D_loop(DTYPE *const vals, ITYPE * const dInds0, ITYPE * const dInds1, ITYPE *const dInds2, ITYPE * const dInds3,
+    ITYPE nnz, DTYPE *dU0, DTYPE * const dU1, DTYPE * const dU2,  DTYPE * const dU3, ITYPE mode, ITYPE R){
+
+	unsigned int tId = threadIdx.x;
+	unsigned int laneId = tId & 31;
+	unsigned int gId = (blockIdx.x * blockDim.x + tId);
+	
+	//like PARTI
+	size_t num_loops_nnz = 1 * 32;
+    size_t const nnz_per_loop = gridDim.x * blockDim.x;
+    if(nnz > nnz_per_loop) {
+        num_loops_nnz = ((nnz + nnz_per_loop - 1) / nnz_per_loop) << 5;
+    }
+	unsigned int x;
+
+	for(size_t nl=0; nl<num_loops_nnz; ++nl) 
+	{
+		x = (gId + nl * nnz_per_loop) >> 5;
+
+		if(x < nnz){
+	        DTYPE tmp_val = 0;
+	        ITYPE idx0 = dInds0[x];
+	        ITYPE idx1 = dInds1[x];
+	        ITYPE idx2 = dInds2[x];
+	        ITYPE idx3 = dInds3[x];
+
+	        for(ITYPE r=laneId; r<R; r+=32) {           
+	            tmp_val = vals[x] * dU1[idx1 * R + r] * dU2[idx2 * R + r]  * dU3[idx3 * R + r];
+	            dU0[idx0 * R + r] += tmp_val;
+	        }
+	    }  
+	    __syncthreads();  
 	}
 }
 __global__ void mttkrp_CSL_kernel(DTYPE * vals, ITYPE *dfbrIdx0, ITYPE *dSlcMapperBin, ITYPE *dInds2, ITYPE *fbrPtr0,
@@ -172,6 +319,52 @@ __global__ void mttkrp_CSL_kernel_bin(DTYPE * vals, ITYPE *dfbrIdx0, ITYPE *dSlc
 	}
 }
 
+// CSL kernel with loop like ParTI
+__global__ void mttkrp_CSL_kernel_bin_loop(DTYPE * vals, ITYPE *dfbrIdx0, ITYPE *dSlcMapperBin, ITYPE *dInds2, ITYPE *fbrPtr0,
+	ITYPE *dInds1, unsigned int nSlices, DTYPE *dU0, DTYPE * dU1, DTYPE *dU2, 
+	ITYPE mode, ITYPE R, ITYPE warpPerSlice, int logOfWPC, int TbPerSlc, int LogOfTPS){
+
+	unsigned int tId = threadIdx.x;
+	unsigned int laneId = tId & 31;
+	unsigned int gId = (blockIdx.x * blockDim.x + tId);
+	unsigned int workId = (tId & ((1 << (5 + logOfWPC)) - 1)) >> 5;  
+	unsigned int slc = gId >> (5 + logOfWPC); // 5: minimum 1 WARP (2^5) 
+	DTYPE tmp_val;
+
+	//like PARTI
+	size_t num_loops_nnz = 1 * 32;
+    size_t const nnz_per_loop = gridDim.x * blockDim.x;
+    if(nSlices > nnz_per_loop) {
+        num_loops_nnz = ((nSlices + nnz_per_loop - 1) / nnz_per_loop) << 5;
+    }
+
+	for(size_t nl=0; nl<num_loops_nnz; ++nl) {
+		
+		slc = (gId + nl * nnz_per_loop) >> 5;
+		              	              
+		if(slc < nSlices){ 	    
+
+			unsigned int mappedSlc = dSlcMapperBin[slc];
+			unsigned int idx0 = dfbrIdx0[mappedSlc]; 
+	    	int fb_st = fbrPtr0[mappedSlc];
+			int fb_end = fbrPtr0[mappedSlc+1];
+			tmp_val = 0;
+			
+			for (int fbr = fb_st + workId; fbr < fb_end; fbr+=warpPerSlice){
+				
+			    unsigned int idx1 = dInds1[fbr];
+		        unsigned int idx2 = dInds2[fbr];                
+	            for(unsigned int r=laneId; r<R; r+=32) {
+	                tmp_val += vals[fbr] * dU2[idx2 * R + r] * dU1[idx1 * R + r]; 
+	            }   
+			}
+			for(unsigned int r=laneId; r<R; r+=32) {  
+				atomicAdd(&dU0[idx0 * R + r], tmp_val);    
+			}
+		}
+		__syncthreads();  
+	}
+}
 
 // CUDA kernel call to do HCSR MTTKRP 
 __global__ void mttkrp_CSL_kernel_hvyBin(DTYPE * vals, ITYPE *dfbrIdx0, ITYPE *dSlcMapperBin, ITYPE *dInds2, ITYPE *fbrPtr0,
@@ -560,24 +753,45 @@ int MTTKRP_COO_GPU(const Tensor &X, Matrix *U, const Options Opt){
 	// BLOCK and GRID
 	int BLOCKSIZE = 128;
 	dim3 block(BLOCKSIZE, 1, 1), grid(1, 1, 1);
-	grid.x = (32 * X.totNnz + BLOCKSIZE - 1) / BLOCKSIZE;
 
     cudaEvent_t start, stop;
     cudaEventCreate(&start);
     cudaEventCreate(&stop);
     float mili = 0;
-
+    bool useLoop = true;
+	
+	// /* Like PARTI loop */ = 
+	if(useLoop)
+		grid.x = 32768;
+	else 
+		grid.x = (32 * X.totNnz + BLOCKSIZE - 1) / BLOCKSIZE;
+	
 	// CUDA call
 	cuda_timer_start(start);
 
-	if(X.ndims == 3)
-		mttkrp_COO_kernel<<<grid, block>>>(dVals, dInds0, dInds1, dInds2, X.totNnz, dU0, dU1, dU2, mode, R); 
-	if(X.ndims == 4)
-		mttkrp_COO_kernel_4D<<<grid, block>>>(dVals, dInds0, dInds1, dInds2, dInds3, X.totNnz, dU0, dU1, dU2, dU3, mode, R); 
+	if(!useLoop){
+
+		if(X.ndims == 3)
+			mttkrp_COO_kernel<<<grid, block>>>(dVals, dInds0, dInds1, dInds2, X.totNnz, dU0, dU1, dU2, mode, R); 
+		
+		else if(X.ndims == 4)
+			mttkrp_COO_kernel_4D<<<grid, block>>>(dVals, dInds0, dInds1, dInds2, dInds3, X.totNnz, dU0, dU1, dU2, dU3, mode, R); 
 	
+	}
+	// /* loop like ParTI */
+	else{
+
+		if(X.ndims == 3)
+			mttkrp_COO_kernel_loop<<<grid, block>>>(dVals, dInds0, dInds1, dInds2, X.totNnz, dU0, dU1, dU2, mode, R ); 
+		
+		else if(X.ndims == 4)
+			mttkrp_COO_kernel_4D_loop<<<grid, block>>>(dVals, dInds0, dInds1, dInds2, dInds3, X.totNnz, dU0, dU1, dU2, dU3, mode, R); 
+	
+	}
 	cuda_timer_stop(start, stop, mili);
 
-    cout << "COO GPU - time " << mili << "ms"<< endl;
+	if(useLoop) cout << "Loop on. ";
+    cout << "COO GPU using loop - time " << mili << "ms"<< endl;
 
 	// check correctness
 	checkCuda(cudaMemcpy(&U[mode0].vals[0], dU0, U[mode0].nRows * U[mode0].nCols * sizeof(DTYPE), cudaMemcpyDeviceToHost), 0);
@@ -1150,6 +1364,10 @@ int MTTKRP_HYB_GPU(const HYBTensor &HybX, Matrix *U, const Options &Opt){
 
     float mili = 0, HYBmili =0, GPUTime = 0, CPUtimer = 0, HYBTime = 0;
 	dLoc = 0, dSlcLoc = 0, dSlcIdxLoc = 0; dFbrLoc =0;
+	bool useLoop = false;
+	
+	if(useLoop)
+		grid.x = 32768*2;
 
 	cuda_timer_start(HYBstart);
 
@@ -1159,18 +1377,30 @@ int MTTKRP_HYB_GPU(const HYBTensor &HybX, Matrix *U, const Options &Opt){
 
 		BLOCKSIZE = 128;
 		block.x = BLOCKSIZE;
-		grid.x = (32 * HybX.COOnnz + BLOCKSIZE - 1) / BLOCKSIZE;
+			// /* Like PARTI loop */ = 
+
+		if(!useLoop)
+			grid.x = (32 * HybX.COOnnz + BLOCKSIZE - 1) / BLOCKSIZE;
 
 		if(Opt.verbose) 
 			cuda_timer_start(start);
   		
-  		if(HybX.ndims == 3)
-			mttkrp_HYB_COO_kernel<<<grid, block, 0, 0>>>(dCOOVals, dCOOInds0, dCOOInds1, dCOOInds2, HybX.COOnnz, dU0, dU1, dU2,
-				Opt.mode, Opt.R); 
-		else if (HybX.ndims == 4)
-			mttkrp_HYB_COO_kernel_4D<<<grid, block, 0, 0>>>(dCOOVals, dCOOInds0, dCOOInds1, dCOOInds2,dCOOInds3, HybX.COOnnz, dU0, dU1, dU2, dU3,
-				Opt.mode, Opt.R); 
-		
+  		if(!useLoop){
+
+	  		if(HybX.ndims == 3)
+				mttkrp_HYB_COO_kernel<<<grid, block, 0, 0>>>(dCOOVals, dCOOInds0, dCOOInds1, dCOOInds2, HybX.COOnnz, dU0, dU1, dU2,	Opt.mode, Opt.R); 
+			else if (HybX.ndims == 4)
+				mttkrp_HYB_COO_kernel_4D<<<grid, block, 0, 0>>>(dCOOVals, dCOOInds0, dCOOInds1, dCOOInds2,dCOOInds3, HybX.COOnnz, dU0, dU1, dU2, dU3, Opt.mode, Opt.R); 
+		}
+
+		else{
+  			
+	  		if(HybX.ndims == 3)
+				mttkrp_HYB_COO_kernel_loop<<<grid, block, 0, 0>>>(dCOOVals, dCOOInds0, dCOOInds1, dCOOInds2, HybX.COOnnz, dU0, dU1, dU2,	Opt.mode, Opt.R); 
+			else if (HybX.ndims == 4)
+				mttkrp_HYB_COO_kernel_4D_loop<<<grid, block, 0, 0>>>(dCOOVals, dCOOInds0, dCOOInds1, dCOOInds2,dCOOInds3, HybX.COOnnz, dU0, dU1, dU2, dU3, Opt.mode, Opt.R); 
+		}
+
 	    if(Opt.verbose){
 	    	cuda_timer_stop(start, stop, mili);
 	    	HYBTime += mili;
@@ -1191,6 +1421,7 @@ int MTTKRP_HYB_GPU(const HYBTensor &HybX, Matrix *U, const Options &Opt){
 
 		int smallBinEndsAt = 5;
 	    
+
 	    if(Opt.verbose) 
 			cuda_timer_start(start);
 		
@@ -1213,12 +1444,19 @@ int MTTKRP_HYB_GPU(const HYBTensor &HybX, Matrix *U, const Options &Opt){
 				logOfWarpPerSlice = 0;//log2(warpPerSlice);
 				slcPerTb = 16 / warpPerSlice;
 
-				grid.x = ( TbPerSlc * warpPerSlice * 32 * HybX.CSLslcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
+	    		if(!useLoop)
+					grid.x = ( warpPerSlice * 32 * HybX.CSLslcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
 			
-				mttkrp_CSL_kernel_bin<<<grid, block, 0, streams[bin + 1]>>>(dCSLVals, dCSLSlcInds, dCSLSlcMapperBin + dCSLBinLoc, 
-					dCSLInds2, dCSLSlcPtr, dCSLInds1, HybX.CSLslcMapperBin[bin].size(), 
-					dU0, dU1, dU2, Opt.mode, Opt.R, warpPerSlice, logOfWarpPerSlice, TbPerSlc, logOfTPS); 
+				if(!useLoop)
+					mttkrp_CSL_kernel_bin<<<grid, block, 0, streams[bin + 1]>>>(dCSLVals, dCSLSlcInds, dCSLSlcMapperBin + dCSLBinLoc, 
+						dCSLInds2, dCSLSlcPtr, dCSLInds1, HybX.CSLslcMapperBin[bin].size(), 
+						dU0, dU1, dU2, Opt.mode, Opt.R, warpPerSlice, logOfWarpPerSlice, TbPerSlc, logOfTPS); 
 			
+				else 
+					mttkrp_CSL_kernel_bin_loop<<<grid, block, 0, streams[bin + 1]>>>(dCSLVals, dCSLSlcInds, dCSLSlcMapperBin + dCSLBinLoc, 
+						dCSLInds2, dCSLSlcPtr, dCSLInds1, HybX.CSLslcMapperBin[bin].size(), 
+						dU0, dU1, dU2, Opt.mode, Opt.R, warpPerSlice, logOfWarpPerSlice, TbPerSlc, logOfTPS); 
+
 			}
 			// Processing heavy bin.. multiple TB per slice
 			else{
