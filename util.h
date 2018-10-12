@@ -13,6 +13,7 @@
 #include <sys/time.h>
 #include <iomanip> 
 #include <iostream>
+#include <omp.h>
 
 using namespace std;
 
@@ -44,17 +45,23 @@ class HYBTensor{
         ITYPE nFibers;
         ITYPE *accessK;
         std::vector<ITYPE> modeOrder;
-        std::vector<vector<ITYPE>> inds;
-        std::vector<DTYPE> vals;
+        ITYPE **inds;
+        // std::vector<vector<ITYPE>> inds;
+        DTYPE *vals;
+        // std::vector<DTYPE> vals;
         std::vector<vector<ITYPE>> fbrPtr;
         std::vector<vector<ITYPE>> fbrIdx;
         std::vector<vector<ITYPE>> slcMapperBin;
-        std::vector<vector<ITYPE>> COOinds;
-        std::vector<DTYPE> COOvals;
+        // std::vector<vector<ITYPE>> COOinds;
+        ITYPE **COOinds;
+        DTYPE *COOvals;
+        // std::vector<DTYPE> COOvals;
         std::vector<ITYPE> CSLslicePtr;
         std::vector<ITYPE> CSLsliceIdx;
-        std::vector<vector<ITYPE>> CSLinds;
-        std::vector<DTYPE> CSLvals;
+        ITYPE **CSLinds;
+        DTYPE *CSLvals;
+        // std::vector<vector<ITYPE>> CSLinds;
+        // std::vector<DTYPE> CSLvals;
         std::vector<vector<ITYPE>> CSLslcMapperBin;
         
         HYBTensor(const Tensor &X) 
@@ -258,13 +265,13 @@ inline int print_HCSRtensor_4D(const Tensor &X){
 
 inline int print_HYBtensor(const HYBTensor &HybX){
 
-    cout << "COO " << HybX.COOvals.size() << endl;
+    cout << "COO " << HybX.COOnnz << endl; 
 
     ITYPE mode0 = HybX.modeOrder[0];
     ITYPE mode1 = HybX.modeOrder[1];
     ITYPE mode2 = HybX.modeOrder[2];
 
-    for(ITYPE x = 0; x < HybX.COOvals.size(); ++x) {
+    for(ITYPE x = 0; x < HybX.COOnnz; ++x) {
     
         cout << HybX.COOinds[mode0][x] << " " << HybX.COOinds[mode1][x] << " " << HybX.COOinds[mode2][x] << endl;
 
@@ -467,89 +474,135 @@ inline int create_HCSR(Tensor &X, const Options &Opt){
 
 inline int create_HYB(HYBTensor &HybX, const Tensor &X, const Options &Opt){
 
+    ITYPE mode0 = HybX.modeOrder[0];
+    ITYPE mode1 = HybX.modeOrder[1];
+    ITYPE mode2 = HybX.modeOrder[2];
+
     ITYPE fbrThreashold = Opt.fbrThreashold;
+
+   
+    
+    // reserving size 
+    std::vector<int> arSlcNnz(X.fbrIdx[0].size(), 0);
+    std::vector<bool> arFbrLenOne(X.fbrIdx[0].size(), true);
+    std::vector<int> arFbrPtr(X.fbrPtr[1].size(), 0);
+
+    ITYPE fiberNnz = 0;
+    int indSize = 0, CSLindSize = 0, COOindSize = 0, curIndSize = 0, curCSLIndSize = 0, curCOOIndSize = 0;
+
+    #pragma omp parallel 
+    {
+        #pragma omp for private(fiberNnz) reduction(+:indSize, CSLindSize, COOindSize)
+    
+        for(ITYPE slc = 0; slc < X.fbrIdx[0].size(); ++slc) {
+            arFbrLenOne[slc] = true;  
+
+            arFbrPtr[slc] =  X.fbrPtr[0][slc+1] -  X.fbrPtr[0][slc];
+            for (int fbr = X.fbrPtr[0][slc]; fbr < X.fbrPtr[0][slc+1]; ++fbr){  
+                
+                fiberNnz = X.fbrPtr[1][fbr+1] - X.fbrPtr[1][fbr];   
+                arSlcNnz[slc] += fiberNnz;
+                if(fiberNnz > 1) 
+                    arFbrLenOne[slc] = false;  
+            }
+            if( arSlcNnz[slc] == 1)
+                COOindSize += arSlcNnz[slc];
+            else if(arFbrLenOne[slc])
+                CSLindSize += arSlcNnz[slc];
+            else 
+                indSize += arSlcNnz[slc];
+        }
+    }
 
     for (int i = 0; i < X.ndims - 1; ++i){
         HybX.fbrPtr.push_back(std::vector<ITYPE>());
         HybX.fbrIdx.push_back(std::vector<ITYPE>());
     }
 
-    bool fbrLenOne = true;
+    // allocating COO space
+    HybX.COOinds = (ITYPE **)malloc(sizeof(ITYPE *) * HybX.ndims);
+    HybX.CSLinds = (ITYPE **)malloc(sizeof(ITYPE *) * HybX.ndims);
+    HybX.inds = (ITYPE **)malloc(sizeof(ITYPE *) * HybX.ndims);
 
-    ITYPE sliceId, fiberId, sliceNnz = 0, fiberNnz = 0;
-    int usedCOOSlc = 0, usedCSLSlc = 0, usedHCSRSlc = 0;
+    for(int m = 0; m < HybX.ndims; m++)
+    {
+        HybX.COOinds[m] = (ITYPE (*))malloc(COOindSize * sizeof(ITYPE));
+    }
+    HybX.COOvals = (DTYPE*)malloc( COOindSize * sizeof(DTYPE));
+    
+    HybX.inds[mode2] = (ITYPE *)malloc(indSize * sizeof(ITYPE));
+    HybX.vals = (DTYPE*)malloc( indSize * sizeof(DTYPE));
+    
+    HybX.CSLinds[mode1] = (ITYPE *)malloc(CSLindSize * sizeof(ITYPE));
+    HybX.CSLinds[mode2] = (ITYPE *)malloc(CSLindSize * sizeof(ITYPE));
+    HybX.CSLvals = (DTYPE *)malloc(CSLindSize * sizeof(DTYPE));
+
     int usedCOOFbr = 0, usedCSLFbr = 0, usedHCSRFbr = 0;
+    curCOOIndSize = 0; curIndSize = 0; curCSLIndSize = 0;
     
-    ITYPE mode0 = HybX.modeOrder[0];
-    ITYPE mode1 = HybX.modeOrder[1];
-    ITYPE mode2 = HybX.modeOrder[2];
     
-    for (int i = 0; i < X.ndims; ++i){
-        HybX.COOinds.push_back(std::vector<ITYPE>()); 
-        HybX.inds.push_back(std::vector<ITYPE>());
-        HybX.CSLinds.push_back(std::vector<ITYPE>());
-     }
-
     for(ITYPE slc = 0; slc < X.fbrIdx[0].size(); ++slc) {
-        sliceNnz = 0;
-        fbrLenOne = true;
 
-        for (int fbr = X.fbrPtr[0][slc]; fbr < X.fbrPtr[0][slc+1]; ++fbr){  
-            fiberNnz = X.fbrPtr[1][fbr+1] - X.fbrPtr[1][fbr]; 
-            if(fiberNnz > 1) fbrLenOne = false;    
-            sliceNnz += fiberNnz;
-        }
+        // cout << slc <<" slcnnz " << arSlcNnz[slc] <<  endl;
 
-        int stFiber =  X.fbrPtr[0][slc];
-        int endFiber =  X.fbrPtr[0][slc+1];
+        const int stFiber =  X.fbrPtr[0][slc];
+        const int endFiber =  X.fbrPtr[0][slc+1];
+        const int idx_st = X.fbrPtr[1][stFiber];
+        const int idx_end = X.fbrPtr[1][endFiber];
         
-        if(sliceNnz == 1){       
+        if(arSlcNnz[slc] == 1){    
+            // replace with array
             int idx =  X.fbrPtr[1][X.fbrPtr[0][slc]];
-            HybX.COOinds[mode0].push_back(X.fbrIdx[0][slc]);
-            HybX.COOinds[mode1].push_back(X.fbrIdx[1][stFiber]);
-            HybX.COOinds[mode2].push_back(X.inds[mode2][idx]); 
-            HybX.COOvals.push_back(X.vals[idx]);  
-            usedCOOSlc++;
+
+            HybX.COOinds[mode0][curCOOIndSize] = (X.fbrIdx[0][slc]);
+            HybX.COOinds[mode1][curCOOIndSize] = (X.fbrIdx[1][stFiber]);
+            HybX.COOinds[mode2][curCOOIndSize] = (X.inds[mode2][idx]); 
+            HybX.COOvals[curCOOIndSize] = (X.vals[idx]);  
+            curCOOIndSize++; 
+            
             usedCOOFbr++;
         
         }
-        else if(fbrLenOne) {    
+        else if(arFbrLenOne[slc] == true) { 
+
             HybX.CSLslicePtr.push_back(X.fbrPtr[0][slc] - (usedCOOFbr + usedHCSRFbr));
-            HybX.CSLsliceIdx.push_back(X.fbrIdx[0][slc]);    
-            for (int fbr = X.fbrPtr[0][slc]; fbr < X.fbrPtr[0][slc+1]; ++fbr){ 
-                int idx =  X.fbrPtr[1][fbr];    
-                HybX.CSLinds[mode1].push_back(X.fbrIdx[1][fbr]);
-                HybX.CSLinds[mode2].push_back(X.inds[mode2][idx]); 
-                HybX.CSLvals.push_back(X.vals[idx]);  
-                
-            }
+            HybX.CSLsliceIdx.push_back(X.fbrIdx[0][slc]);                  
+            
+            memcpy(&(HybX.CSLinds[mode1][0]) + curCSLIndSize, &(X.fbrIdx[1][0]) + stFiber, sizeof(ITYPE) * arSlcNnz[slc]);
+            memcpy(&(HybX.CSLinds[mode2][0]) + curCSLIndSize, &(X.inds[mode2][0]) + idx_st, sizeof(ITYPE) * arSlcNnz[slc]);
+            memcpy(&(HybX.CSLvals[0]) + curCSLIndSize, &(X.vals[0]) + idx_st, sizeof(DTYPE) * arSlcNnz[slc]);
+            
+            curCSLIndSize += arSlcNnz[slc];
             usedCSLFbr +=  X.fbrPtr[0][slc + 1] - X.fbrPtr[0][slc];
-            usedCSLSlc++;
         }
         else{
 
             HybX.fbrPtr[0].push_back(X.fbrPtr[0][slc] - (usedCOOFbr + usedCSLFbr));
             HybX.fbrIdx[0].push_back(X.fbrIdx[0][slc]);
+
+            int nfiber = X.fbrPtr[0][slc+1] -  X.fbrPtr[0][slc];   
             
             for (int fbr = X.fbrPtr[0][slc]; fbr < X.fbrPtr[0][slc+1]; ++fbr){   
-                
+
                 HybX.fbrPtr[1].push_back(X.fbrPtr[1][fbr] - (usedCOOFbr + usedCSLFbr));   
-                HybX.fbrIdx[1].push_back(X.fbrIdx[1][fbr]); 
-                copy(X.inds[mode2].begin() + X.fbrPtr[1][fbr] , X.inds[mode2].begin() + X.fbrPtr[1][fbr+1], std::back_inserter(HybX.inds[mode2]));       
-                copy(X.vals.begin() + X.fbrPtr[1][fbr] , X.vals.begin() + X.fbrPtr[1][fbr+1], std::back_inserter(HybX.vals));          
+                HybX.fbrIdx[1].push_back(X.fbrIdx[1][fbr]);         
             }
+             
+            memcpy(&(HybX.inds[mode2][0]) + curIndSize, &(X.inds[mode2][0]) + idx_st, sizeof(ITYPE) * arSlcNnz[slc]);
+            memcpy(&(HybX.vals[0]) + curIndSize, &(X.vals[0]) + idx_st, sizeof(DTYPE) * arSlcNnz[slc]);
             usedHCSRFbr += X.fbrPtr[0][slc + 1] - X.fbrPtr[0][slc];
-            usedHCSRSlc++;
+            curIndSize += arSlcNnz[slc];
         }
     }
     
-    HybX.fbrPtr[1].push_back(HybX.inds[mode2].size());
+    HybX.fbrPtr[1].push_back(curIndSize);
     HybX.fbrPtr[0].push_back((ITYPE)(HybX.fbrPtr[1].size() -1 ));
-    HybX.CSLslicePtr.push_back((ITYPE)(HybX.CSLvals.size()));
+    HybX.CSLslicePtr.push_back((ITYPE)(curCSLIndSize));
+
     HybX.nFibers = HybX.fbrPtr[1].size() - 1;
-    HybX.COOnnz = HybX.COOvals.size();
-    HybX.CSLnnz = HybX.CSLvals.size();
-    HybX.HCSRnnz = HybX.vals.size();
+    HybX.COOnnz = COOindSize;//HybX.COOvals.size();
+    HybX.CSLnnz = CSLindSize;
+    HybX.HCSRnnz = indSize;//HybX.vals.size();
     if(Opt.verbose){
         cout << "slices in COO " <<HybX.COOnnz << endl;
         cout << "slices in CSL " <<HybX.CSLsliceIdx.size() << endl;
@@ -560,64 +613,100 @@ inline int create_HYB(HYBTensor &HybX, const Tensor &X, const Options &Opt){
 // TBD: diff with 3d..avoided CSL
 inline int create_HYB_4D(HYBTensor &HybX, const Tensor &X, const Options &Opt){
 
+    ITYPE mode0 = HybX.modeOrder[0];
+    ITYPE mode1 = HybX.modeOrder[1];
+    ITYPE mode2 = HybX.modeOrder[2];
+    ITYPE mode3 = HybX.modeOrder[3];
+
     ITYPE fbrThreashold = Opt.fbrThreashold;
+
+    ITYPE fiberNnz = 0;
+    
+    // reserving size 
+    std::vector<int> arSlcNnz(X.fbrIdx[0].size(), 0);
+    std::vector<bool> arFbrLenOne(X.fbrIdx[0].size(), true);
+    std::vector<int> arFbrPtr(X.fbrPtr[1].size(), 0);
+
+    int indSize = 0, CSLindSize = 0, COOindSize = 0, curIndSize = 0, curCSLIndSize = 0, curCOOIndSize = 0;
+
+    #pragma omp parallel 
+    {
+         #pragma omp for private(fiberNnz) reduction(+:indSize, CSLindSize, COOindSize)
+    
+        for(ITYPE slc = 0; slc < X.fbrIdx[0].size(); ++slc) {
+            
+            for (int fbrS = X.fbrPtr[0][slc]; fbrS < X.fbrPtr[0][slc+1]; ++fbrS){   
+            
+                fiberNnz = 0;
+
+                for (int fbr = X.fbrPtr[1][fbrS]; fbr < X.fbrPtr[1][fbrS+1]; ++fbr){   
+                    
+                    fiberNnz = X.fbrPtr[2][fbr+1] - X.fbrPtr[2][fbr];   
+                    arSlcNnz[slc] += fiberNnz;
+                    if(fiberNnz > 1) 
+                        arFbrLenOne[slc] = false;  
+                }
+            }
+            if( arSlcNnz[slc] == 1)
+                COOindSize += arSlcNnz[slc];
+            // else if(arFbrLenOne[slc])
+            //     CSLindSize += arSlcNnz[slc];
+            else 
+                indSize += arSlcNnz[slc];
+        }
+    }
 
     for (int i = 0; i < X.ndims - 1; ++i){
         HybX.fbrPtr.push_back(std::vector<ITYPE>());
         HybX.fbrIdx.push_back(std::vector<ITYPE>());
     }
 
-    bool fbrLenOne = true;
+        // allocating COO space
+    HybX.COOinds = (ITYPE **)malloc(sizeof(ITYPE *) * HybX.ndims);
+    HybX.CSLinds = (ITYPE **)malloc(sizeof(ITYPE *) * HybX.ndims);
+    HybX.inds = (ITYPE **)malloc(sizeof(ITYPE *) * HybX.ndims);
 
-    ITYPE sliceId, fiberId, sliceNnz = 0, fiberNnz = 0;
-    int usedCOOSlc = 0, usedCSLSlc = 0, usedHCSRSlc = 0;
+    for(int m = 0; m < HybX.ndims; m++)
+    {
+        HybX.COOinds[m] = (ITYPE (*))malloc(COOindSize * sizeof(ITYPE));
+    }
+
+    HybX.COOvals = (DTYPE*)malloc( COOindSize * sizeof(DTYPE));
+    HybX.inds[mode3] = (ITYPE (*))malloc(indSize * sizeof(ITYPE));
+    HybX.vals = (DTYPE*)malloc( indSize * sizeof(DTYPE));
+    // enable for CSL
+    // HybX.CSLinds[mode1] = (ITYPE (*))malloc(CSLindSize * sizeof(ITYPE));
+    // HybX.CSLinds[mode2] = (ITYPE (*))malloc(CSLindSize * sizeof(ITYPE));
+    // HybX.CSLvals = (DTYPE (*))malloc(CSLindSize * sizeof(DTYPE));
+
+    // ITYPE sliceId, fiberId, sliceNnz = 0, fiberNnz = 0;
+    // int usedCOOSlc = 0, usedCSLSlc = 0, usedHCSRSlc = 0;
     int usedCOOFbr = 0, usedCSLFbr = 0, usedHCSRFbr = 0;
-    
-    ITYPE mode0 = HybX.modeOrder[0];
-    ITYPE mode1 = HybX.modeOrder[1];
-    ITYPE mode2 = HybX.modeOrder[2];
-    ITYPE mode3 = HybX.modeOrder[3];
-    
-    for (int i = 0; i < X.ndims; ++i){
-        HybX.COOinds.push_back(std::vector<ITYPE>()); 
-        HybX.inds.push_back(std::vector<ITYPE>());
-        HybX.CSLinds.push_back(std::vector<ITYPE>());
-     }
+      
+    // for (int i = 0; i < X.ndims; ++i){
+    //     HybX.COOinds.push_back(std::vector<ITYPE>()); 
+    //     HybX.inds.push_back(std::vector<ITYPE>());
+    //     HybX.CSLinds.push_back(std::vector<ITYPE>());
+    //  }
 
     for(ITYPE slc = 0; slc < X.fbrIdx[0].size(); ++slc) {
-        sliceNnz = 0;
-        fbrLenOne = true;
 
-
-        for (int fbrS = X.fbrPtr[0][slc]; fbrS < X.fbrPtr[0][slc+1]; ++fbrS){   
-            
-            fiberNnz = 0;
-            
-            for (int fbr = X.fbrPtr[1][fbrS]; fbr < X.fbrPtr[1][fbrS+1]; ++fbr){   
-
-                fiberNnz = X.fbrPtr[2][fbr+1] - X.fbrPtr[2][fbr]; 
-                if(fiberNnz > 1) fbrLenOne = false; 
-                sliceNnz += fiberNnz;
-            }
-        }
-
-        int stFiber =  X.fbrPtr[0][slc];
-        int endFiber =  X.fbrPtr[0][slc+1];
+        const int stSFiber =  X.fbrPtr[0][slc];
+        const int endSFiber =  X.fbrPtr[0][slc+1];
+        const int stFiber =  X.fbrPtr[1][stSFiber];
+        const int endFiber =  X.fbrPtr[1][endSFiber];
+        const int idx_st = X.fbrPtr[2][stFiber];
+        const int idx_end = X.fbrPtr[2][endFiber];
         
-        if(sliceNnz == 1){       
-            HybX.COOinds[mode0].push_back(X.fbrIdx[0][slc]);
+        if(arSlcNnz[slc] == 1){       
 
-            int fbrSIdx =  X.fbrPtr[0][slc];
-            HybX.COOinds[mode1].push_back(X.fbrIdx[1][fbrSIdx]);
-
-            int fbrIdx =  X.fbrPtr[1][fbrSIdx];
-            HybX.COOinds[mode2].push_back(X.fbrIdx[2][fbrIdx]); 
-
-            int idx =  X.fbrPtr[2][fbrIdx];
-            HybX.COOinds[mode3].push_back(X.inds[mode3][idx]); 
-            HybX.COOvals.push_back(X.vals[idx]);  
+            HybX.COOinds[mode0][curCOOIndSize] = X.fbrIdx[0][slc];
+            HybX.COOinds[mode1][curCOOIndSize] = X.fbrIdx[1][stSFiber];
+            HybX.COOinds[mode2][curCOOIndSize] = X.fbrIdx[2][stFiber]; 
+            HybX.COOinds[mode3][curCOOIndSize] = X.inds[mode3][idx_st];
+            HybX.COOvals[curCOOIndSize] = X.vals[idx_st];  
             
-            usedCOOSlc++;
+            curCOOIndSize++; 
             usedCOOFbr++;      
         }
         // else if(fbrLenOne) {    
@@ -646,24 +735,27 @@ inline int create_HYB_4D(HYBTensor &HybX, const Tensor &X, const Options &Opt){
                 for (int fbr = X.fbrPtr[1][fbrS]; fbr < X.fbrPtr[1][fbrS+1]; ++fbr){   
                     HybX.fbrPtr[2].push_back(X.fbrPtr[2][fbr] - (usedCOOFbr + usedCSLFbr));   
                     HybX.fbrIdx[2].push_back(X.fbrIdx[2][fbr]); 
-                    copy(X.inds[mode3].begin() + X.fbrPtr[2][fbr] , X.inds[mode3].begin() + X.fbrPtr[2][fbr+1], std::back_inserter(HybX.inds[mode3]));       
-                    copy(X.vals.begin() + X.fbrPtr[2][fbr] , X.vals.begin() + X.fbrPtr[2][fbr+1], std::back_inserter(HybX.vals));     
+                    // copy(X.inds[mode3].begin() + X.fbrPtr[2][fbr] , X.inds[mode3].begin() + X.fbrPtr[2][fbr+1], std::back_inserter(HybX.inds[mode3]));       
+                    // copy(X.vals.begin() + X.fbrPtr[2][fbr] , X.vals.begin() + X.fbrPtr[2][fbr+1], std::back_inserter(HybX.vals));     
                 }     
             }
+            memcpy(&(HybX.inds[mode3][0]) + curIndSize, &(X.inds[mode3][0]) + idx_st, sizeof(ITYPE) * arSlcNnz[slc]);
+            memcpy(&(HybX.vals[0]) + curIndSize, &(X.vals[0]) + idx_st, sizeof(DTYPE) * arSlcNnz[slc]);
+
             usedHCSRFbr += X.fbrPtr[0][slc + 1] - X.fbrPtr[0][slc];
-            usedHCSRSlc++;
+            curIndSize += arSlcNnz[slc];
         }
     }
     
-    HybX.fbrPtr[2].push_back(HybX.inds[mode3].size());
+    HybX.fbrPtr[2].push_back(indSize);
     HybX.fbrPtr[1].push_back((ITYPE)(HybX.fbrPtr[2].size() -1 ));
     HybX.fbrPtr[0].push_back((ITYPE)(HybX.fbrPtr[1].size() -1 ));
     // HybX.CSLslicePtr.push_back((ITYPE)(HybX.CSLvals.size()));
 
     HybX.nFibers = HybX.fbrPtr[2].size() - 1;
-    HybX.COOnnz = HybX.COOvals.size();
-    HybX.CSLnnz = HybX.CSLvals.size();
-    HybX.HCSRnnz = HybX.vals.size();
+    HybX.COOnnz = COOindSize;//HybX.COOvals.size();
+    HybX.CSLnnz = 0;;//HybX.CSLvals.size();
+    HybX.HCSRnnz = indSize;//HybX.vals.size();
 
     if(Opt.verbose){
         cout << "slices in COO " <<HybX.COOnnz << endl;
@@ -763,61 +855,6 @@ inline int create_TiledHCSR(TiledTensor *TiledX, const Options &Opt, int tile){
     return 0;
 }
 
-// inline int create_TiledHCSR(TiledTensor *TiledX, const Options &Opt , int tile){
-
-//     ITYPE sliceId, fiberId;
-
-//     for (int i = 0; i < TiledX[tile].ndims - 1; ++i){
-//         TiledX[tile].fbrPtr.push_back(std::vector<ITYPE>());
-//         TiledX[tile].fbrIdx.push_back(std::vector<ITYPE>());
-//     }
-//     ITYPE mode0 = TiledX[tile].modeOrder[0];
-//     ITYPE mode1 = TiledX[tile].modeOrder[1];
-//     ITYPE mode2 = TiledX[tile].modeOrder[2];
-//     ITYPE fbrThreashold = Opt.fbrThreashold;
-    
-//     TiledX[tile].fbrPtr[0].push_back(0);
-//     TiledX[tile].fbrPtr[1].push_back(0);
-//     ITYPE prevSliceId =  TiledX[tile].inds[mode0][0];
-//     ITYPE prevFiberId =  TiledX[tile].inds[mode1][0];
-//     TiledX[tile].fbrIdx[0].push_back(prevSliceId);
-//     TiledX[tile].fbrIdx[1].push_back(prevFiberId);
-    
-//     int idx = 1 ;
-    
-//     while(idx < TiledX[tile].totNnz) {
-        
-//         sliceId = TiledX[tile].inds[mode0][idx];
-//         fiberId = TiledX[tile].inds[mode1][idx];   
-   
-//         ITYPE fiberNnz = 1;
-//         while( fiberId == prevFiberId && sliceId == prevSliceId && idx < TiledX[tile].totNnz && fiberNnz < fbrThreashold){
-//             ++idx;
-//             fiberNnz++;
-//             sliceId = TiledX[tile].inds[mode0][idx];
-//             fiberId = TiledX[tile].inds[mode1][idx];           
-//         }
-//         if(idx == TiledX[tile].totNnz)
-//             break;
-//         TiledX[tile].fbrPtr[1].push_back(idx);
-//         TiledX[tile].fbrIdx[1].push_back(fiberId);
-        
-//         if( sliceId != prevSliceId) {//not else ..not become this in loop
-//             TiledX[tile].fbrIdx[0].push_back(sliceId);
-//             TiledX[tile].fbrPtr[0].push_back((ITYPE)(TiledX[tile].fbrPtr[1].size()) - 1);
-//         }      
-//         prevSliceId = sliceId;
-//         prevFiberId = fiberId;
-//         ++idx;
-//         fiberNnz = 1;
-//     }
-//     TiledX[tile].fbrPtr[1].push_back(idx);
-//     TiledX[tile].fbrIdx[1].push_back(fiberId);
-//     TiledX[tile].fbrPtr[0].push_back((ITYPE)(TiledX[tile].fbrPtr[1].size() -1 ));
-//     TiledX[tile].nFibers = TiledX[tile].fbrPtr[1].size() - 1;
-
-//     return 0;
-// }
 // changed param to HYB
 inline int make_HybBin(HYBTensor &X, const Options & Opt){
 
@@ -946,7 +983,7 @@ inline int make_TiledBin(TiledTensor *TiledX, const Options & Opt, int tile){
     LB[9] = 32 * TB ;   UB[9] = TiledX[tile].totNnz + 1;  // 512 WARP = 32 TB
 
     UB[Opt.nBin - 1] = TiledX[tile].totNnz + 1;
-
+    UB[0] = 1025; //mergin first 5 bin
     // Populate bin
     for(ITYPE slc = 0; slc < TiledX[tile].fbrIdx[0].size(); ++slc) {
         int nnzSlc = 0;
@@ -1086,7 +1123,7 @@ inline int tensor_stats(const Tensor &X){
 //     }
 //     return 0;
 // }
-inline int create_mats(const Tensor &X, Matrix *U, const Options &Opt){
+inline int create_mats(const Tensor &X, Matrix *U, const Options &Opt, bool ata){
     
     ITYPE mode;
     ITYPE R = Opt.R;
@@ -1094,11 +1131,12 @@ inline int create_mats(const Tensor &X, Matrix *U, const Options &Opt){
         mode = X.modeOrder[m];
         U[mode].nRows =  X.dims[mode];
         U[mode].nCols =  R;
-        U[mode].vals = (DTYPE*)malloc(X.dims[mode] * R * sizeof(DTYPE));
+        if(ata)  
+            U[mode].nCols = U[mode].nRows;
+        U[mode].vals = (DTYPE*)malloc(U[mode].nRows * U[mode].nCols * sizeof(DTYPE));
     }
     return 0;
 }
-
 inline int randomize_mats(const Tensor &X, Matrix *U, const Options &Opt){
 
     ITYPE mode;
@@ -1158,7 +1196,7 @@ inline void correctness_check(DTYPE *out, DTYPE *COOout, int nr, int nc){
             if( diff > precision){
                 if(diff > maxDiff)
                     maxDiff = diff;
-                cout << "mismatch at (" << i <<"," << j <<") got: " << out[i * nc +j] << " exp: " << COOout[i * nc +j] << endl;
+                // cout << "mismatch at (" << i <<"," << j <<") got: " << out[i * nc +j] << " exp: " << COOout[i * nc +j] << endl;
                 mismatch++;
                 // exit(0);
             }          

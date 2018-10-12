@@ -31,7 +31,7 @@ int main(int argc, char* argv[]){
     }
       
     Matrix *U = new Matrix[X.ndims]; 
-    create_mats(X, U, Opt);
+    create_mats(X, U, Opt, false);
     randomize_mats(X, U, Opt);
     zero_mat(X, U, Opt.mode);
 
@@ -77,9 +77,11 @@ int main(int argc, char* argv[]){
     else if(Opt.impType == 9){
         create_HCSR(X, Opt);
         HYBTensor HybX(X);
+        cout << "Creating HYB... " ;
+        double t0 = seconds();
         ((X.ndims == 3) ?  create_HYB(HybX, X, Opt) :  create_HYB_4D(HybX, X, Opt));   
-        
-        // create_HYB(HybX, X, Opt);
+        printf("create HYB - time: %.3f sec \n", seconds() - t0);
+
         make_HybBin(HybX, Opt);
         // print_HYBtensor(HybX);
         
