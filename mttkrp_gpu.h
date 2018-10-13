@@ -288,7 +288,7 @@ __global__ void mttkrp_CSL_kernel(DTYPE * vals, ITYPE *dfbrIdx0, ITYPE *dSlcMapp
 
 __global__ void mttkrp_CSL_kernel_bin(DTYPE * vals, ITYPE *dfbrIdx0, ITYPE *dSlcMapperBin, ITYPE *dInds2, ITYPE *fbrPtr0,
 	ITYPE *dInds1, unsigned int nSlices, DTYPE *dU0, DTYPE * dU1, DTYPE *dU2, 
-	ITYPE mode, ITYPE R, ITYPE warpPerSlice, int logOfWPC, int TbPerSlc, int LogOfTPS){
+	ITYPE mode, ITYPE R, ITYPE warpPerSlice, int logOfWPC){
 
 	unsigned int tId = threadIdx.x;
 	unsigned int laneId = tId & 31;
@@ -1369,95 +1369,111 @@ int MTTKRP_HYB_GPU(const HYBTensor &HybX, Matrix *U, const Options &Opt){
 	if(useLoop)
 		grid.x = 32768*2;
 
+			// mili = 0; 
+	dCSLBinLoc = 0; dBinLoc = 0;
+
+	int smallBinEndsAt = 5;
+	int slcPerTb = 0;
+
 	cuda_timer_start(HYBstart);
 
 	// ******* CUDA COO *******
 
-	if(HybX.COOnnz > 0){
+	// if(HybX.COOnnz > 0){
 
-		BLOCKSIZE = 128;
-		block.x = BLOCKSIZE;
-			// /* Like PARTI loop */ = 
+	// 	BLOCKSIZE = 128;
+	// 	block.x = BLOCKSIZE;
+	// 		// /* Like PARTI loop */ = 
 
-		if(!useLoop)
-			grid.x = (32 * HybX.COOnnz + BLOCKSIZE - 1) / BLOCKSIZE;
+	// 	if(!useLoop)
+	// 		grid.x = (32 * HybX.COOnnz + BLOCKSIZE - 1) / BLOCKSIZE;
 
-		if(Opt.verbose) 
-			cuda_timer_start(start);
+	// 	if(Opt.verbose) 
+	// 		cuda_timer_start(start);
   		
-  		if(!useLoop){
+ //  		if(!useLoop){
+
+	//   		if(HybX.ndims == 3)
+	// 			mttkrp_HYB_COO_kernel<<<grid, block, 0, 0>>>(dCOOVals, dCOOInds0, dCOOInds1, dCOOInds2, HybX.COOnnz, dU0, dU1, dU2,	Opt.mode, Opt.R); 
+	// 		else if (HybX.ndims == 4)
+	// 			mttkrp_HYB_COO_kernel_4D<<<grid, block, 0, 0>>>(dCOOVals, dCOOInds0, dCOOInds1, dCOOInds2,dCOOInds3, HybX.COOnnz, dU0, dU1, dU2, dU3, Opt.mode, Opt.R); 
+	// 	}
+
+	// 	else{
+  			
+	//   		if(HybX.ndims == 3)
+	// 			mttkrp_HYB_COO_kernel_loop<<<grid, block, 0, 0>>>(dCOOVals, dCOOInds0, dCOOInds1, dCOOInds2, HybX.COOnnz, dU0, dU1, dU2,	Opt.mode, Opt.R); 
+	// 		else if (HybX.ndims == 4)
+	// 			mttkrp_HYB_COO_kernel_4D_loop<<<grid, block, 0, 0>>>(dCOOVals, dCOOInds0, dCOOInds1, dCOOInds2,dCOOInds3, HybX.COOnnz, dU0, dU1, dU2, dU3, Opt.mode, Opt.R); 
+	// 	}
+
+	//     if(Opt.verbose){
+	//     	cuda_timer_stop(start, stop, mili);
+	//     	HYBTime += mili;
+	//     	cout << "HYB-COO GPU " << mili << "ms"<< endl;
+	//     }
+	// }
+	// ******* CUDA CSL *******
+
+	// if(HybX.CSLnnz > 0 || HybX.HCSRnnz > 0)
+	{
+		if(HybX.COOnnz > 0){
+
+			BLOCKSIZE = 128;
+			block.x = 128;
+			grid.x = (32 * HybX.COOnnz + BLOCKSIZE - 1) / BLOCKSIZE;
 
 	  		if(HybX.ndims == 3)
 				mttkrp_HYB_COO_kernel<<<grid, block, 0, 0>>>(dCOOVals, dCOOInds0, dCOOInds1, dCOOInds2, HybX.COOnnz, dU0, dU1, dU2,	Opt.mode, Opt.R); 
 			else if (HybX.ndims == 4)
 				mttkrp_HYB_COO_kernel_4D<<<grid, block, 0, 0>>>(dCOOVals, dCOOInds0, dCOOInds1, dCOOInds2,dCOOInds3, HybX.COOnnz, dU0, dU1, dU2, dU3, Opt.mode, Opt.R); 
+		
 		}
-
-		else{
-  			
-	  		if(HybX.ndims == 3)
-				mttkrp_HYB_COO_kernel_loop<<<grid, block, 0, 0>>>(dCOOVals, dCOOInds0, dCOOInds1, dCOOInds2, HybX.COOnnz, dU0, dU1, dU2,	Opt.mode, Opt.R); 
-			else if (HybX.ndims == 4)
-				mttkrp_HYB_COO_kernel_4D_loop<<<grid, block, 0, 0>>>(dCOOVals, dCOOInds0, dCOOInds1, dCOOInds2,dCOOInds3, HybX.COOnnz, dU0, dU1, dU2, dU3, Opt.mode, Opt.R); 
-		}
-
-	    if(Opt.verbose){
-	    	cuda_timer_stop(start, stop, mili);
-	    	HYBTime += mili;
-	    	cout << "HYB-COO GPU " << mili << "ms"<< endl;
-	    }
-	}
-	// ******* CUDA CSL *******
-
-	if(HybX.CSLnnz > 0){
-
-		int slcPerTb = 0;
 
 		BLOCKSIZE = 512;
 		block.x = BLOCKSIZE;
 
-		// mili = 0; 
-		dCSLBinLoc = 0;
-
-		int smallBinEndsAt = 5;
-	    
-
-	    if(Opt.verbose) 
-			cuda_timer_start(start);
-		
 		for (int bin = 0; bin < Opt.nBin ; ++bin){
 
+			dBinLoc += ((bin > 0) ? HybX.slcMapperBin[bin-1].size() : 0);
 			dCSLBinLoc += ((bin > 0) ? HybX.CSLslcMapperBin[bin-1].size() : 0);
-			
-			if( HybX.CSLslcMapperBin[bin].size() == 0)
+
+			if( HybX.slcMapperBin[bin].size() == 0 && HybX.CSLslcMapperBin[bin].size() == 0)
 				continue;
-			
+			// Processing small bin.. merged to one. 1 WARP slice
 			if(bin < smallBinEndsAt){
 
-				TbPerSlc = 1;
-
-				warpPerSlice = ((bin > 0) ? 2 << (bin - 1) : 1);
-
-				// if(warpPerSlice > 16)		
-				//	warpPerSlice = 16;
 				warpPerSlice = 1;
 				logOfWarpPerSlice = 0;//log2(warpPerSlice);
 				slcPerTb = 16 / warpPerSlice;
 
-	    		if(!useLoop)
+				/* CSL small bin */
+				if(HybX.CSLnnz > 0){
+
 					grid.x = ( warpPerSlice * 32 * HybX.CSLslcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
-			
-				if(!useLoop)
-					mttkrp_CSL_kernel_bin<<<grid, block, 0, streams[bin + 1]>>>(dCSLVals, dCSLSlcInds, dCSLSlcMapperBin + dCSLBinLoc, 
-						dCSLInds2, dCSLSlcPtr, dCSLInds1, HybX.CSLslcMapperBin[bin].size(), 
-						dU0, dU1, dU2, Opt.mode, Opt.R, warpPerSlice, logOfWarpPerSlice, TbPerSlc, logOfTPS); 
-			
-				else 
-					mttkrp_CSL_kernel_bin_loop<<<grid, block, 0, streams[bin + 1]>>>(dCSLVals, dCSLSlcInds, dCSLSlcMapperBin + dCSLBinLoc, 
-						dCSLInds2, dCSLSlcPtr, dCSLInds1, HybX.CSLslcMapperBin[bin].size(), 
-						dU0, dU1, dU2, Opt.mode, Opt.R, warpPerSlice, logOfWarpPerSlice, TbPerSlc, logOfTPS); 
 
+					mttkrp_CSL_kernel_bin<<<grid, block, 0, streams[1]>>>(dCSLVals, dCSLSlcInds, dCSLSlcMapperBin + dCSLBinLoc, 
+						dCSLInds2, dCSLSlcPtr, dCSLInds1, HybX.CSLslcMapperBin[bin].size(), 
+						dU0, dU1, dU2, Opt.mode, Opt.R, warpPerSlice, logOfWarpPerSlice); 
+				}
+				
+				/* HCSR small bin */
+				if(HybX.HCSRnnz > 0){
+
+					grid.x = ( warpPerSlice * 32 * HybX.slcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
+
+					if(HybX.ndims == 3)
+						mttkrp_HCSR_kernel_smllBin<<<grid, block, 0, streams[2]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
+						dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, HybX.slcMapperBin[bin].size(), 
+						dU0, dU1, dU2, Opt.mode, Opt.R, warpPerSlice, logOfWarpPerSlice, TbPerSlc, logOfTPS); 
+					
+					else if(HybX.ndims == 4)
+						mttkrp_HCSR_kernel_smllBin_4D<<<grid, block, 0, streams[2]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
+						dInds3 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, dFbrPtr2 + dFbrLoc2, dFbrIdx2 + dFbrLoc2, HybX.slcMapperBin[bin].size(), 
+						dU0, dU1, dU2, dU3, Opt.mode, Opt.R, warpPerSlice, logOfWarpPerSlice, TbPerSlc, logOfTPS); 
+				}
 			}
+
 			// Processing heavy bin.. multiple TB per slice
 			else{
 		
@@ -1468,102 +1484,44 @@ int MTTKRP_HYB_GPU(const HYBTensor &HybX, Matrix *U, const Options &Opt){
 
 				warpPerSlice = 16;
 				logOfWarpPerSlice = 4;
+
+				/* CSL big bin */
+				if(HybX.CSLnnz > 0){	
+					grid.x = (TbPerSlc * warpPerSlice * 32 * HybX.CSLslcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
+					
+					mttkrp_CSL_kernel_hvyBin<<<grid, block, 0, streams[bin+1]>>>(dCSLVals + dLoc, dCSLSlcInds + dSlcIdxLoc, dCSLSlcMapperBin + dSlcIdxLoc + dCSLBinLoc, 
+						dCSLInds2 + dLoc, dCSLSlcPtr + dSlcLoc, dCSLInds1, HybX.CSLslcMapperBin[bin].size(), 
+						dU0, dU1, dU2, Opt.mode, Opt.R, warpPerSlice, logOfWarpPerSlice,  TbPerSlc, logOfTPS); 
+				}
+
+				/* HCSR big bin */
+				if(HybX.HCSRnnz > 0){
+					grid.x = (TbPerSlc * warpPerSlice * 32 * HybX.slcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
+					
+					if(HybX.ndims == 3)
+						mttkrp_HCSR_kernel_hvyBin<<<grid, block, 0, streams[bin+2]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
+							dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, HybX.slcMapperBin[bin].size(), 
+							dU0, dU1, dU2, Opt.mode, Opt.R, warpPerSlice, logOfWarpPerSlice,  TbPerSlc, logOfTPS); 
 						
-				grid.x = (TbPerSlc * warpPerSlice * 32 * HybX.CSLslcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
-				
-				mttkrp_CSL_kernel_hvyBin<<<grid, block, 0, streams[bin+1]>>>(dCSLVals + dLoc, dCSLSlcInds + dSlcIdxLoc, dCSLSlcMapperBin + dSlcIdxLoc + dCSLBinLoc, 
-					dCSLInds2 + dLoc, dCSLSlcPtr + dSlcLoc, dCSLInds1, HybX.CSLslcMapperBin[bin].size(), 
-					dU0, dU1, dU2, Opt.mode, Opt.R, warpPerSlice, logOfWarpPerSlice,  TbPerSlc, logOfTPS); 
+					else if(HybX.ndims == 4)
+	                    mttkrp_HCSR_kernel_hvyBin_4D<<<grid, block, 0, streams[bin + 2]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
+	                    dInds3 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc, dfbrIdx1 + dFbrIdxLoc, dFbrPtr2 + dFbrLoc2, dFbrIdx2 + dFbrLoc2, HybX.slcMapperBin[bin].size(), 
+	                    dU0, dU1, dU2, dU3, Opt.mode, Opt.R, warpPerSlice, logOfWarpPerSlice,  TbPerSlc, logOfTPS);
+		        } 	
+
 			}
 		}
 
-	    if(Opt.verbose){
-	    	cuda_timer_stop(start, stop, mili);
-	    	HYBTime += mili;
-	    	cout << "HYB-CSL GPU " << mili << "ms"<< endl;
-	    }
-	}
-
-	// ******* CUDA HSCR *******
-
-	if(HybX.HCSRnnz > 0){
-		
-		dBinLoc = 0;
-		BLOCKSIZE = 512;
-		block.x = BLOCKSIZE;
-
-		int smallBinEndsAt = 5;
-		
-		int slcPerTb = 0;
-		
-		if(Opt.verbose) 
-			cuda_timer_start(start);
-		
-		for (int bin = 0; bin < Opt.nBin ; ++bin){
-
-			dBinLoc += ((bin > 0) ? HybX.slcMapperBin[bin-1].size() : 0);
-			
-			if( HybX.slcMapperBin[bin].size() == 0)
-				continue;
-
-			if(bin < smallBinEndsAt){
-
-				TbPerSlc = 1;
-
-				warpPerSlice = 1;//((bin > 0) ? 2 << (bin - 1) : 1);
-
-				// if(warpPerSlice > 16)		
-				// 	warpPerSlice = 16;
-				logOfWarpPerSlice = 0;//log2(warpPerSlice);
-				slcPerTb = 16 / warpPerSlice;
-
-				grid.x = ( TbPerSlc * warpPerSlice * 32 * HybX.slcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
-
-				if(HybX.ndims == 3)
-					mttkrp_HCSR_kernel_smllBin<<<grid, block, 0, streams[bin+11]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
-					dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, HybX.slcMapperBin[bin].size(), 
-					dU0, dU1, dU2, Opt.mode, Opt.R, warpPerSlice, logOfWarpPerSlice, TbPerSlc, logOfTPS); 
-				
-				else if(HybX.ndims == 4)
-					mttkrp_HCSR_kernel_smllBin_4D<<<grid, block, 0, streams[bin+11]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
-					dInds3 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, dFbrPtr2 + dFbrLoc2, dFbrIdx2 + dFbrLoc2, HybX.slcMapperBin[bin].size(), 
-					dU0, dU1, dU2, dU3, Opt.mode, Opt.R, warpPerSlice, logOfWarpPerSlice, TbPerSlc, logOfTPS); 
-			}
-			
-			// Processing heavy bin.. multiple TB per slice
-			else{
-
-				TbPerSlc = 1 << (bin - smallBinEndsAt + 1); // 1st big bin starts with 1 TB 1 << 1 not 1 << 5
-				if(TbPerSlc > 32) TbPerSlc = 32;		
-				logOfTPS = log2(TbPerSlc);
-
-				warpPerSlice = 16;
-				logOfWarpPerSlice = 4;
-						
-				grid.x = (TbPerSlc * warpPerSlice * 32 * HybX.slcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
-				
-				if(HybX.ndims == 3)
-				mttkrp_HCSR_kernel_hvyBin<<<grid, block, 0, streams[bin+11]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
-					dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, HybX.slcMapperBin[bin].size(), 
-					dU0, dU1, dU2, Opt.mode, Opt.R, warpPerSlice, logOfWarpPerSlice,  TbPerSlc, logOfTPS); 
-				
-				else if(HybX.ndims == 4)
-                    mttkrp_HCSR_kernel_hvyBin_4D<<<grid, block, 0, streams[bin + 11]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
-                    dInds3 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc, dfbrIdx1 + dFbrIdxLoc, dFbrPtr2 + dFbrLoc2, dFbrIdx2 + dFbrLoc2, HybX.slcMapperBin[bin].size(), 
-                    dU0, dU1, dU2, dU3, Opt.mode, Opt.R, warpPerSlice, logOfWarpPerSlice,  TbPerSlc, logOfTPS); 
-			}
-		}
-
-	    if(Opt.verbose){
-	    	cuda_timer_stop(start, stop, mili);
-	    	HYBTime += mili;
-	    	cout << "HYB-HCSR GPU " << mili << "ms"<< endl;
-	    }
+	    // if(Opt.verbose){
+	    // 	cuda_timer_stop(start, stop, mili);
+	    // 	HYBTime += mili;
+	    // 	cout << "CSL+HCSR GPU-time: " << mili << "ms"<< endl;
+	    // }
 	}
 
 	cuda_timer_stop(HYBstart, HYBstop, HYBmili);
 	if(Opt.verbose)
-		cout << "verbose on. HYB GPU: " << HYBTime << endl;
+		cout << "verbose on. HYB GPU: " << HYBmili << endl;
 	else
 		cout << "HYB GPU: " << HYBmili << endl;
 
