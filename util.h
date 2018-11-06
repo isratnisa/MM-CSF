@@ -46,22 +46,16 @@ class HYBTensor{
         ITYPE *accessK;
         std::vector<ITYPE> modeOrder;
         ITYPE **inds;
-        // std::vector<vector<ITYPE>> inds;
         DTYPE *vals;
-        // std::vector<DTYPE> vals;
         std::vector<vector<ITYPE>> fbrPtr;
         std::vector<vector<ITYPE>> fbrIdx;
         std::vector<vector<ITYPE>> slcMapperBin;
-        // std::vector<vector<ITYPE>> COOinds;
         ITYPE **COOinds;
         DTYPE *COOvals;
-        // std::vector<DTYPE> COOvals;
         std::vector<ITYPE> CSLslicePtr;
         std::vector<ITYPE> CSLsliceIdx;
         ITYPE **CSLinds;
         DTYPE *CSLvals;
-        // std::vector<vector<ITYPE>> CSLinds;
-        // std::vector<DTYPE> CSLvals;
         std::vector<vector<ITYPE>> CSLslcMapperBin;
         
         HYBTensor(const Tensor &X) 
@@ -94,6 +88,13 @@ class TiledTensor{
 };
 
 class Matrix{
+    public:
+        ITYPE nRows;
+        ITYPE nCols;
+        DTYPE *vals;
+};
+
+class semiSpTensor{
     public:
         ITYPE nRows;
         ITYPE nCols;
@@ -481,7 +482,6 @@ inline int create_HYB(HYBTensor &HybX, const Tensor &X, const Options &Opt){
     ITYPE fbrThreashold = Opt.fbrThreashold;
 
    
-    
     // reserving size 
     std::vector<int> arSlcNnz(X.fbrIdx[0].size(), 0);
     std::vector<bool> arFbrLenOne(X.fbrIdx[0].size(), true);
@@ -1123,6 +1123,16 @@ inline int tensor_stats(const Tensor &X){
 //     }
 //     return 0;
 // }
+
+
+inline int prepare_Y(const Tensor &X, semiSpTensor &Y, const Options &Opt){
+    Y.nRows = X.nFibers;
+    Y.nCols = Opt.R;
+    Y.vals = (DTYPE *)malloc( X.nFibers * Opt.R * sizeof(DTYPE));
+    return 0;
+
+}
+
 inline int create_mats(const Tensor &X, Matrix *U, const Options &Opt, bool ata){
     
     ITYPE mode;
@@ -1137,6 +1147,7 @@ inline int create_mats(const Tensor &X, Matrix *U, const Options &Opt, bool ata)
     }
     return 0;
 }
+
 inline int randomize_mats(const Tensor &X, Matrix *U, const Options &Opt){
 
     ITYPE mode;
@@ -1167,6 +1178,20 @@ inline int zero_mat(const Tensor &X, Matrix *U, ITYPE mode){
     return 0;
 }
 
+inline void write_output_ttmY(semiSpTensor &Y, ITYPE mode, string outFile){
+    
+    ofstream fp(outFile); 
+    fp << Y.nRows << " x " << Y.nCols << " semiSpTensor" << endl;
+    fp << std::fixed;
+    for (int i = 0; i < Y.nRows; ++i)
+    {
+        for (int j = 0; j < Y.nCols; ++j)
+        {
+            fp << std::setprecision(2) << Y.vals[i * Y.nCols + j] << "\t" ;
+        }
+        fp << endl;  
+    }
+}
 
 inline void write_output(Matrix *U, ITYPE mode, string outFile){
     
@@ -1182,6 +1207,7 @@ inline void write_output(Matrix *U, ITYPE mode, string outFile){
         fp << endl;  
     }
 }
+
 
 
 inline void correctness_check(DTYPE *out, DTYPE *COOout, int nr, int nc){
@@ -1209,6 +1235,16 @@ inline void correctness_check(DTYPE *out, DTYPE *COOout, int nr, int nc){
         cout <<  mismatch <<" mismatches found at " << precision << " precision" << endl;
         cout << "Maximum diff " << maxDiff << endl;
     }
+}
+
+inline void free_all(Tensor &X, semiSpTensor &Y, Matrix *U){
+    
+    free(Y.vals);
+
+    for (int m = 0; m < X.ndims; ++m){  
+        free(U[m].vals);
+    }      
+
 }
 
 inline double seconds(){
