@@ -145,7 +145,6 @@ inline int load_tensor(Tensor &X, const Options &Opt){
     string filename = Opt.inFileName;
     ITYPE index;
     DTYPE vid=0;
-    ITYPE mode = Opt.mode;
 
     ITYPE switchMode;
 
@@ -192,21 +191,123 @@ inline int load_tensor(Tensor &X, const Options &Opt){
     }
     X.totNnz = X.vals.size();
 
-    // for (int i = 0; i < X.totNnz; ++i)
-    // {
-    //  cout << X.inds[0][i] << " " << X.inds[1][i] << " "<< X.inds[2][i] <<endl;
-    // }
-    //    cout << "nnz " << X.totNnz << endl;
     return 0;
 }
 
+inline bool sort_pred(tuple <ITYPE, ITYPE, ITYPE, DTYPE> left, 
+                  tuple <ITYPE, ITYPE, ITYPE, DTYPE> right) {
+    // return get<0>(left) < get<0>(right);
+
+    if (get<0>(left) != get<0>(right)) 
+        return (get<0>(left) < get<0>(right));
+    
+    if (get<1>(left) != get<1>(right)) 
+        return (get<1>(left) < get<1>(right));
+      
+    return (get<2>(left) < get<2>(right));
+}
+
+inline int sort_COOtensor(Tensor &X){
+
+    const ITYPE mode0 = X.modeOrder[0];
+    const ITYPE mode1 = X.modeOrder[1];
+    const ITYPE mode2 = X.modeOrder[2];
+
+    vector < tuple <ITYPE, ITYPE, ITYPE, DTYPE> > items;
+    tuple <ITYPE, ITYPE, ITYPE, DTYPE> ap;
+
+    for (long idx = 0; idx < X.totNnz; ++idx) { 
+
+        ap=std::make_tuple(X.inds[mode0][idx], X.inds[mode1][idx], X.inds[mode2][idx], X.vals[idx]); 
+        items.push_back(ap);
+    }
+
+    sort(items.begin(), items.end(), sort_pred);
+
+    for (long idx = 0; idx < X.totNnz; ++idx) {
+
+            X.inds[mode0][idx] = get<0>(items[idx]);
+            X.inds[mode1][idx] = get<1>(items[idx]);
+            X.inds[mode2][idx] = get<2>(items[idx]);
+            X.vals[idx] = get<3>(items[idx]);
+    }
+    
+    // ofstream of("sorted.txt");
+
+    // of << X.ndims << endl;
+    // of << std::fixed;
+    
+    // for (int i = 0; i < X.ndims; ++i)
+    // {
+    //    of << X.dims[i] << " ";
+    // }
+    // of << endl;
+
+    // for (long idx = 0; idx < X.totNnz; ++idx) {
+
+    //     for (int i = 0; i < X.ndims; ++i)
+    //          of << X.inds[i][idx] << " ";
+    //     of << std::setprecision(1) << X.vals[idx] << endl;
+    // }
+}
+
+inline int sort_MI_CSF(const Tensor &X, TiledTensor *MTX, int m){
+
+    const ITYPE mode0 = MTX[m].modeOrder[0];
+    const ITYPE mode1 = MTX[m].modeOrder[1];
+    const ITYPE mode2 = MTX[m].modeOrder[2];
+
+    vector < tuple <ITYPE, ITYPE, ITYPE, DTYPE> > items;
+    tuple <ITYPE, ITYPE, ITYPE, DTYPE> ap;
+
+    for (long idx = 0; idx < MTX[m].totNnz; ++idx) { 
+
+        ap=std::make_tuple(MTX[m].inds[mode0][idx], MTX[m].inds[mode1][idx], MTX[m].inds[mode2][idx], MTX[m].vals[idx]); 
+        items.push_back(ap);
+    }
+
+    sort(items.begin(), items.end(), sort_pred);
+
+    for (long idx = 0; idx < MTX[m].totNnz; ++idx) {
+
+        MTX[m].inds[mode0][idx] = get<0>(items[idx]);
+        MTX[m].inds[mode1][idx] = get<1>(items[idx]);
+        MTX[m].inds[mode2][idx] = get<2>(items[idx]);
+        MTX[m].vals[idx] = get<3>(items[idx]);
+    }
+
+    // cout << "sorted tile : " << m << endl;
+    // for (long idx = 0; idx < MTX[m].totNnz; ++idx) { 
+    // std::cout << MTX[m].inds[0][idx] << " "
+    //           << MTX[m].inds[1][idx] << " "
+    //           << MTX[m].inds[2][idx] << " "
+    //           << MTX[m].vals[idx] <<  std::endl;
+    // }
+}
+
+
 inline int print_COOtensor(const Tensor &X){
+
+    cout << "Tensor X in COO format: " << endl;
 
     for(ITYPE x = 0; x < X.totNnz; ++x) {
         for (int i = 0; i < X.ndims; ++i)
-            cout << X.inds[X.modeOrder[i]][x] << " ";
-        cout << endl;
+            cout << X.inds[i][x] << " ";
+        cout << X.vals[x]<< endl;
     }           
+
+}
+
+inline int print_TiledCOOtensor(const TiledTensor *TiledX, const int nTile){
+
+    for (int tile = 0; tile < nTile; ++tile){
+        cout << "tile: " << tile << endl;
+        for(ITYPE x = 0; x < TiledX[tile].totNnz; ++x) {
+            for (int i = 0; i < TiledX[tile].ndims; ++i)
+                cout << TiledX[tile].inds[i][x] << " ";
+            cout << endl;
+        } 
+    }          
 
 }
 
@@ -234,6 +335,7 @@ inline int print_HCSRtensor(const Tensor &X){
         }
     }
 }
+
 inline int print_HCSRtensor_4D(const Tensor &X){
 
     cout << "no of fibers " << X.fbrPtr[1].size() << endl;
@@ -317,7 +419,11 @@ inline int print_HYBtensor(const HYBTensor &HybX){
 
 inline int print_TiledHCSRtensor(TiledTensor *TiledX, int tile){
 
-    cout << "no of fibers " << TiledX[tile].fbrPtr[1].size() << endl;
+    cout << "Tile " << tile << " of Tensor X in Tiled HCSR format: " << endl;
+
+    const ITYPE mode0 = TiledX[tile].modeOrder[0];
+    const ITYPE mode1 = TiledX[tile].modeOrder[1];
+    const ITYPE mode2 = TiledX[tile].modeOrder[2];
     
     for(ITYPE slc = 0; slc < TiledX[tile].fbrIdx[0].size(); ++slc) {
 
@@ -329,7 +435,7 @@ inline int print_TiledHCSRtensor(TiledTensor *TiledX, int tile){
         for (int fbr = fb_st; fbr < fb_end; ++fbr){        
             // printf("fbr %d :  ", fbr );    
             for(ITYPE x = TiledX[tile].fbrPtr[1][fbr]; x < TiledX[tile].fbrPtr[1][fbr+1]; ++x) {
-                cout << idx0 << " " << TiledX[tile].inds[1][x] << " " << TiledX[tile].inds[2][x] << endl;
+                cout << idx0 << " " << TiledX[tile].inds[mode1][x] << " " << TiledX[tile].inds[mode2][x] << endl;
 
             }            
         }
@@ -343,12 +449,13 @@ inline int make_KTiling(const Tensor &X, TiledTensor *TiledX, const Options &Opt
     ITYPE mode2 = X.modeOrder[2];
     ITYPE mode3 = ((X.ndims == 4) ? X.modeOrder[3] : 0) ;
     
+    cout << "TBD:: get rid of dims, mode, etc. for each tile";
     for (int tile = 0; tile < Opt.nTile; ++tile){
         TiledX[tile].ndims = X.ndims;
-        TiledX[tile].dims = new ITYPE[TiledX[tile].ndims];      
+        TiledX[tile].dims = new ITYPE[TiledX[tile].ndims]; 
         
         for (int i = 0; i < X.ndims; ++i){
-            TiledX[tile].inds.push_back(std::vector<ITYPE>());
+            TiledX[tile].inds.push_back(std::vector<ITYPE>()); 
             TiledX[tile].dims[i] = X.dims[i];
             TiledX[tile].modeOrder.push_back(X.modeOrder[i]);
         }           
@@ -983,7 +1090,14 @@ inline int make_TiledBin(TiledTensor *TiledX, const Options & Opt, int tile){
     LB[9] = 32 * TB ;   UB[9] = TiledX[tile].totNnz + 1;  // 512 WARP = 32 TB
 
     UB[Opt.nBin - 1] = TiledX[tile].totNnz + 1;
+    if(Opt.verbose) 
+        cout << "Merged all bins for smaller tiles" << endl;
+
+
     UB[0] = 1025; //mergin first 5 bin
+
+    if(Opt.tileSize < 5000)
+        UB[0] = 1025;
     // Populate bin
     for(ITYPE slc = 0; slc < TiledX[tile].fbrIdx[0].size(); ++slc) {
         int nnzSlc = 0;
@@ -1076,6 +1190,73 @@ inline int tensor_stats(const Tensor &X){
     return 0;
 }
 
+/* param: MTX - mode wise tiled X */
+inline int find_hvyslc_allMode(const Tensor &X, TiledTensor *MTX){
+ 
+    int threshold =  X.totNnz/X.dims[0];
+
+    ITYPE mode0 = X.modeOrder[0];
+    ITYPE mode1 = X.modeOrder[1];
+    ITYPE mode2 = X.modeOrder[2];
+
+    ITYPE *slcNnzMode0 = new ITYPE[X.dims[0]];
+    ITYPE *slcNnzMode1 = new ITYPE[X.dims[1]];
+    ITYPE *slcNnzMode2 = new ITYPE[X.dims[2]];
+
+    memset(slcNnzMode0, 0, X.dims[0] * sizeof(ITYPE));
+    memset(slcNnzMode1, 0, X.dims[1] * sizeof(ITYPE));
+    memset(slcNnzMode2, 0, X.dims[2] * sizeof(ITYPE));
+    
+    /* Populate with nnz for each slice for each mode */
+
+    for(ITYPE x=0; x<X.totNnz; ++x) {
+
+        ITYPE idx0 = X.inds[mode0][x];
+        ITYPE idx1 = X.inds[mode1][x];
+        ITYPE idx2 = X.inds[mode2][x];
+       
+        slcNnzMode0[idx0]++;
+        slcNnzMode1[idx1]++;
+        slcNnzMode2[idx2]++;
+    }
+
+    /* split nnz based on heavy write occurance */
+
+    int mode = 0;
+
+    for (int m = 0; m < X.ndims; ++m){
+        MTX[m].ndims = X.ndims;
+        MTX[m].dims = new ITYPE[MTX[m].ndims];    
+        
+        for (int i = 0; i < X.ndims; ++i){
+            MTX[m].inds.push_back(std::vector<ITYPE>());  
+            MTX[m].dims[i] = X.dims[i];
+            MTX[m].modeOrder.push_back((i+m) % X.ndims);
+        }           
+    }
+
+    for (int idx = 0; idx < X.totNnz; ++idx){
+
+        ITYPE idx0 = X.inds[mode0][idx];
+        ITYPE idx1 = X.inds[mode1][idx];
+        ITYPE idx2 = X.inds[mode2][idx];
+
+        if ( slcNnzMode2[idx2] > threshold )     
+            mode = mode2;
+        else
+            mode = mode0;
+
+        for (int i = 0; i < X.ndims; ++i)  {
+            MTX[mode].inds[i].push_back(X.inds[i][idx]); 
+        }
+        MTX[mode].vals.push_back(X.vals[idx]);      
+    }
+
+    for (int m = 0; m < X.ndims; ++m){
+        MTX[m].totNnz = MTX[m].vals.size();
+        cout << threshold << " " << m << " " << MTX[m].totNnz << endl;
+    }
+}
 
 // inline int compute_accessK(Tensor &X, const Options &Opt){
 
@@ -1207,8 +1388,6 @@ inline void write_output(Matrix *U, ITYPE mode, string outFile){
         fp << endl;  
     }
 }
-
-
 
 inline void correctness_check(DTYPE *out, DTYPE *COOout, int nr, int nc){
    

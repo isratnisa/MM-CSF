@@ -17,7 +17,6 @@ example.tns
 
 $ make  
 
-
 ## Run
 
 To see all the options: 
@@ -31,7 +30,13 @@ $ ./mttkrp -i example.tns -m 0 -R 32 -t 1
 -t 1: COO on CPU  
 -t 2: CSF on CPU  
 -t 3: COO on GPU  
-...
+-t 4: CSF on GPU  
+-t 5: Tiled-COO on CPU  
+-t 6: Tiled-CSF on CPU  
+-t 7: Tiled-COO on GPU  
+-t 8: Tiled-CSF on GPU  
+-t 9: shared-CSF on GPU  
+-t 10: HYB on GPU  
 
 ##Notes:
 
