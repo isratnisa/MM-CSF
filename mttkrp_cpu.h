@@ -23,9 +23,9 @@ int MTTKRP_HCSR_CPU_mode1(const Tensor &X, Matrix *U, const Options &Opt, const 
 
 int MTTKRP_HCSR_CPU_mode2(const Tensor &X, const TiledTensor *TiledX, Matrix *U, const Options &Opt, const int mode);
 
-int MTTKRP_MIHCSR_CPU_mode2_using012(const TiledTensor *TiledX, Matrix *U, const Options &Opt, const int HCSRmode);
+int MTTKRP_MIHCSR_CPU_mode0_using201(const TiledTensor *TiledX, Matrix *U, const Options &Opt, const int mode, const int MTTKRPmode);
 
-int MTTKRP_MIHCSR_CPU_mode0_using201(const TiledTensor *TiledX, Matrix *U, const Options &Opt, const int mode);
+int MTTKRP_MIHCSR_CPU_mode1_using201(const TiledTensor *TiledX, Matrix *U, const Options &Opt, const int HCSRmode, const int MTTKRPmode);
 
 int MTTKRP_HCSR_CPU_4D(const Tensor &X, Matrix *U, const Options &Opt);
 

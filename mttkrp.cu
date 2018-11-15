@@ -183,7 +183,7 @@ int main(int argc, char* argv[]){
 
     /* MI-CSF*/
 
-    else if(Opt.impType == 11){
+    else if(Opt.impType == 11 || Opt.impType == 12){
 
         cout << "Development phase- CPU done" << endl;
         cout << "Starting MI-CSF" << endl;
@@ -201,21 +201,42 @@ int main(int argc, char* argv[]){
             if(ModeWiseTiledX[m].totNnz > 0){           
                 sort_MI_CSF(X, ModeWiseTiledX, m);
                 create_TiledHCSR(ModeWiseTiledX, Opt, m);
+                make_TiledBin(ModeWiseTiledX, Opt, m);
                 // print_TiledHCSRtensor(ModeWiseTiledX, m);
             }
         }
+        /* on CPU */
+        if(Opt.impType == 11){ 
 
-        // cout << "MTTKRP on mode 0 using MI-CSF" << endl;
-        // MTTKRP_MIHCSR_CPU(ModeWiseTiledX, U, Opt, 0);
-        // MTTKRP_MIHCSR_CPU_mode0_using201(ModeWiseTiledX, U, Opt, 2);
+            // cout << "MTTKRP on mode 0 using MI-CSF" << endl;
+            int MTTKRPmode = 0;
+            // if (ModeWiseTiledX[0].totNnz) MTTKRP_MIHCSR_CPU(ModeWiseTiledX, U, Opt, 0);
+            // if (ModeWiseTiledX[2].totNnz) MTTKRP_MIHCSR_CPU_mode0_using201(ModeWiseTiledX, U, Opt, 2, MTTKRPmode);
 
-        cout << "MTTKRP on mode 2 using MI-CSF" << endl;
-        int mode = 2;
-        randomize_mats(X, U, Opt);
-        zero_mat(X, U, mode); 
-        MTTKRP_MIHCSR_CPU(ModeWiseTiledX, U, Opt, mode);
-        MTTKRP_MIHCSR_CPU_mode2_using012(ModeWiseTiledX, U, Opt, 0);
-        // write_output(U, curMode[mode], "tmp2");  
+            // cout << "MTTKRP on mode 1 using MI-CSF" << endl;
+            // MTTKRPmode = 1;
+            // randomize_mats(X, U, Opt);
+            // zero_mat(X, U, MTTKRPmode); 
+            // if (ModeWiseTiledX[0].totNnz) MTTKRP_MIHCSR_CPU_mode0_using201(ModeWiseTiledX, U, Opt, 0, MTTKRPmode);
+            // if (ModeWiseTiledX[2].totNnz) MTTKRP_MIHCSR_CPU_mode1_using201(ModeWiseTiledX, U, Opt, 2, MTTKRPmode));
+
+
+            cout << "MTTKRP on mode 2 using MI-CSF" << endl;
+             MTTKRPmode = 2;
+            randomize_mats(X, U, Opt);
+            zero_mat(X, U, MTTKRPmode); 
+            if (ModeWiseTiledX[0].totNnz) MTTKRP_MIHCSR_CPU_mode1_using201(ModeWiseTiledX, U, Opt, 0, MTTKRPmode);
+            if (ModeWiseTiledX[2].totNnz) MTTKRP_MIHCSR_CPU(ModeWiseTiledX, U, Opt, MTTKRPmode);
+   
+            // write_output(U, 2, "tmp2");  
+        }
+        /* on GPU */
+        else if(Opt.impType == 12){ 
+            cout << "MTTKRP on mode 0 using MI-CSF" << endl;
+            MTTKRP_MIHCSR_GPU(ModeWiseTiledX, U, Opt, 0);
+            // MTTKRP_MIHCSR_GPU_mode0_using201(ModeWiseTiledX, U, Opt, 2);
+
+        }
     }
 
     else // e.g. -1 
@@ -231,15 +252,18 @@ int main(int argc, char* argv[]){
             exit(0);
         }
         cout << "!!!CHECK CORRECTNESS MODE!!!" << endl;
+        Opt.mode = 2;
         int mode = Opt.mode;
         int nr = U[mode].nRows;  
         int nc = U[mode].nCols;
         DTYPE *out = (DTYPE*)malloc(nr * nc * sizeof(DTYPE));
         memcpy(out, U[mode].vals, nr*nc * sizeof(DTYPE));
-        zero_mat(X, U, Opt.mode);
+
+        zero_mat(X, U, mode);
         cout << "correctness with COO " << endl;
         ((X.ndims == 3) ?  MTTKRP_COO_CPU(X, U, Opt) :  MTTKRP_COO_CPU_4D(X, U, Opt));   
         correctness_check(out, U[mode].vals, nr, nc);
+
     }
 }
 
