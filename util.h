@@ -449,7 +449,7 @@ inline int make_KTiling(const Tensor &X, TiledTensor *TiledX, const Options &Opt
     ITYPE mode2 = X.modeOrder[2];
     ITYPE mode3 = ((X.ndims == 4) ? X.modeOrder[3] : 0) ;
     
-    cout << "TBD:: get rid of dims, mode, etc. for each tile";
+    // cout << "TBD:: get rid of dims, mode, etc. for each tile";
     for (int tile = 0; tile < Opt.nTile; ++tile){
         TiledX[tile].ndims = X.ndims;
         TiledX[tile].dims = new ITYPE[TiledX[tile].ndims]; 

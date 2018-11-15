@@ -124,8 +124,6 @@ int main(int argc, char* argv[]){
         else 
             Opt.tileSize = (X.dims[tilingMode] + Opt.nTile - 1)/Opt.nTile;  
         
-        cout << "tile size and numbers: " <<  Opt.tileSize << " " << Opt.nTile << endl;
-        
         if(Opt.nTile > X.dims[tilingMode]){
             cout << "Number of tiles ("<< Opt.nTile << ") should be as minimum as K's dimension (" << X.dims[tilingMode]  << "). Exiting."<< endl ;
             exit(0);
@@ -135,7 +133,6 @@ int main(int argc, char* argv[]){
         make_KTiling(X, TiledX, Opt);
         
         // create HCSR for each tile
-        cout << "TBD:: active rows" << endl;
         for (int tile = 0; tile < Opt.nTile; ++tile){
 
             if(TiledX[tile].totNnz > 0)
@@ -185,8 +182,8 @@ int main(int argc, char* argv[]){
 
     else if(Opt.impType == 11 || Opt.impType == 12){
 
-        cout << "Development phase- CPU done" << endl;
-        cout << "Starting MI-CSF" << endl;
+        if(Opt.verbose)
+            cout << "Starting MI-CSF" << endl;
         sort_COOtensor(X);
         TiledTensor ModeWiseTiledX[X.ndims];
         find_hvyslc_allMode(X, ModeWiseTiledX);
@@ -251,8 +248,10 @@ int main(int argc, char* argv[]){
             cout << "Already running COO seq on CPU!" << endl; 
             exit(0);
         }
-        cout << "!!!CHECK CORRECTNESS MODE!!!" << endl;
-        Opt.mode = 2;
+        if(Opt.verbose && Opt.impType == 12)
+            cout << "checking only the last mode" << endl;
+
+        Opt.mode = ((Opt.impType == 12) ? 2 : Opt.mode);;
         int mode = Opt.mode;
         int nr = U[mode].nRows;  
         int nc = U[mode].nCols;
