@@ -597,9 +597,9 @@ inline int create_HYB(HYBTensor &HybX, const Tensor &X, const Options &Opt){
     ITYPE fiberNnz = 0;
     int indSize = 0, CSLindSize = 0, COOindSize = 0, curIndSize = 0, curCSLIndSize = 0, curCOOIndSize = 0;
 
-    #pragma omp parallel 
+    // #pragma omp parallel 
     {
-        #pragma omp for private(fiberNnz) reduction(+:indSize, CSLindSize, COOindSize)
+        // #pragma omp for private(fiberNnz) reduction(+:indSize, CSLindSize, COOindSize)
     
         for(ITYPE slc = 0; slc < X.fbrIdx[0].size(); ++slc) {
             arFbrLenOne[slc] = true;  
@@ -736,9 +736,9 @@ inline int create_HYB_4D(HYBTensor &HybX, const Tensor &X, const Options &Opt){
 
     int indSize = 0, CSLindSize = 0, COOindSize = 0, curIndSize = 0, curCSLIndSize = 0, curCOOIndSize = 0;
 
-    #pragma omp parallel 
+    // #pragma omp parallel 
     {
-         #pragma omp for private(fiberNnz) reduction(+:indSize, CSLindSize, COOindSize)
+         // #pragma omp for private(fiberNnz) reduction(+:indSize, CSLindSize, COOindSize)
     
         for(ITYPE slc = 0; slc < X.fbrIdx[0].size(); ++slc) {
             
