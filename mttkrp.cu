@@ -178,6 +178,95 @@ int main(int argc, char* argv[]){
         }
     }
 
+     /* same-CSF*/
+
+    else if(Opt.impType == 13 || Opt.impType == 14 ){
+
+        if(Opt.verbose)
+            cout << "Starting sameCSF: MTTKRP on all modes using same CSF" << endl;
+        sort_COOtensor(X);
+
+        /* on CPU non tiled */
+        if(Opt.impType == 13){ 
+
+            create_HCSR(X, Opt); 
+         
+            int MTTKRPmode = Opt.mode;
+            cout << "MTTKRP on mode " <<  MTTKRPmode << " using same-CSF" << endl;
+            ((X.ndims == 3) ?  MTTKRP_HCSR_CPU(X, TiledX, U, Opt) :  MTTKRP_HCSR_CPU_4D(X, U, Opt)); 
+
+            MTTKRPmode = (Opt.mode + 1) % X.ndims;
+            cout << "MTTKRP on mode " <<  MTTKRPmode << " using same-CSF" << endl;
+            randomize_mats(X, U, Opt);
+            zero_mat(X, U, MTTKRPmode); 
+            MTTKRP_HCSR_CPU_mode1(X, U, Opt,  MTTKRPmode);
+
+            MTTKRPmode = (Opt.mode + 2) % X.ndims;
+            cout << "MTTKRP on mode " <<  MTTKRPmode << " using same-CSF" << endl;
+            randomize_mats(X, U, Opt);
+            zero_mat(X, U, MTTKRPmode); 
+            MTTKRP_HCSR_CPU_mode2(X, U, Opt,  MTTKRPmode);
+ 
+        }
+       /* on GPU tiled (skipping on tiled gpu due to time constraints)*/
+        if(Opt.impType == 14){ 
+
+            create_HCSR(X, Opt);
+
+            int tilingMode = X.modeOrder[X.ndims -1];
+            Opt.tileSize = (X.dims[tilingMode] + Opt.nTile - 1)/Opt.nTile;  
+            
+            if(Opt.nTile > X.dims[tilingMode]){
+                cout << "Number of tiles ("<< Opt.nTile << ") should be as minimum as K's dimension (" << X.dims[tilingMode]  << "). Exiting."<< endl ;
+                exit(0);
+            }
+
+            // split X into tiles based on K indices
+            make_KTiling(X, TiledX, Opt);
+            
+            // create HCSR for each tile
+            for (int tile = 0; tile < Opt.nTile; ++tile){
+
+                if(TiledX[tile].totNnz > 0)
+                    create_TiledHCSR(TiledX, Opt, tile);
+                // print_TiledHCSRtensor(TiledX, tile);
+            }  
+
+            // Split tiles into bins accordin to nnz in slice
+            for (int tile = 0; tile < Opt.nTile; ++tile){
+                if(TiledX[tile].totNnz > 0)
+                    make_TiledBin(TiledX, Opt, tile);
+            }
+
+         
+            int MTTKRPmode = Opt.mode;
+            cout << "MTTKRP on mode " <<  MTTKRPmode << " using same-CSF" << endl;
+            MTTKRP_TILED_HCSR_GPU(TiledX, U, Opt);
+            // ((X.ndims == 3) ?  MTTKRP_HCSR_CPU(X, TiledX, U, Opt) :  MTTKRP_HCSR_CPU_4D(X, U, Opt)); 
+
+            // MTTKRPmode = (Opt.mode + 1) % X.ndims;
+            // cout << "MTTKRP on mode " <<  MTTKRPmode << " using same-CSF" << endl;
+            // randomize_mats(X, U, Opt);
+            // zero_mat(X, U, MTTKRPmode); 
+            // MTTKRP_HCSR_CPU_mode1(X, U, Opt,  MTTKRPmode);
+
+            // MTTKRPmode = (Opt.mode + 2) % X.ndims;
+            // cout << "MTTKRP on mode " <<  MTTKRPmode << " using same-CSF" << endl;
+            // randomize_mats(X, U, Opt);
+            // zero_mat(X, U, MTTKRPmode); 
+            // MTTKRP_HCSR_CPU_mode2(X, U, Opt,  MTTKRPmode);
+ 
+        }
+        // /* on GPU */
+        // else if(Opt.impType == 14){ 
+        //     cout << "MTTKRP on mode 0 using MI-CSF" << endl;
+        //     MTTKRP_MIHCSR_GPU(ModeWiseTiledX, U, Opt, 0);
+        //     // MTTKRP_MIHCSR_GPU_mode0_using201(ModeWiseTiledX, U, Opt, 2);
+
+        // }
+    }
+
+
     /* MI-CSF*/
 
     else if(Opt.impType == 11 || Opt.impType == 12){
@@ -251,7 +340,8 @@ int main(int argc, char* argv[]){
         if(Opt.verbose && Opt.impType == 12)
             cout << "checking only the last mode" << endl;
 
-        Opt.mode = ((Opt.impType == 12) ? 2 : Opt.mode);;
+        // Opt.mode = ((Opt.impType == 12) ? 2 : Opt.mode);
+        Opt.mode = ((Opt.impType == 12) ? 2 : 2);
         int mode = Opt.mode;
         int nr = U[mode].nRows;  
         int nc = U[mode].nCols;

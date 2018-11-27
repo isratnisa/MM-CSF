@@ -334,7 +334,7 @@ int MTTKRP_MIHCSR_CPU_mode1_using201(const TiledTensor *TiledX, Matrix *U, const
 
 /* MTTKRP on mode 2 using sorted tensor 0-1-2  */
 
-int MTTKRP_HCSR_CPU_mode2(const Tensor &X, const TiledTensor *TiledX, Matrix *U, const Options &Opt, const int mode){
+int MTTKRP_HCSR_CPU_mode2(const Tensor &X, Matrix *U, const Options &Opt, const int mode){
 
     int *curMode = new int [X.ndims];
     
