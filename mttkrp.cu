@@ -240,7 +240,6 @@ int main(int argc, char* argv[]){
 
          
             int MTTKRPmode = Opt.mode;
-            cout << "MTTKRP on mode " <<  MTTKRPmode << " using same-CSF" << endl;
             MTTKRP_TILED_HCSR_GPU(TiledX, U, Opt);
             // ((X.ndims == 3) ?  MTTKRP_HCSR_CPU(X, TiledX, U, Opt) :  MTTKRP_HCSR_CPU_4D(X, U, Opt)); 
 
@@ -341,7 +340,7 @@ int main(int argc, char* argv[]){
             cout << "checking only the last mode" << endl;
 
         // Opt.mode = ((Opt.impType == 12) ? 2 : Opt.mode);
-        Opt.mode = ((Opt.impType == 12) ? 2 : 2);
+        Opt.mode = ((Opt.impType == 12) ? 2 : 1);
         int mode = Opt.mode;
         int nr = U[mode].nRows;  
         int nc = U[mode].nCols;

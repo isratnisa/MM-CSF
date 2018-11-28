@@ -1223,7 +1223,7 @@ int MTTKRP_TILED_HCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 		cudaStreamCreate(&streams[bin]);
 
 	/*MTTKRP on Opt.mode*/
-	int MTTKRPmode = 0;
+	int MTTKRPmode = Opt.mode;
 	for (int tile = 0; tile < Opt.nTile; ++tile){
 
 		dBinLoc = 0;
@@ -1324,12 +1324,14 @@ int MTTKRP_TILED_HCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 	/*MTTKRP on next and next-next mode using same-CSF*/
 	if(Opt.impType == 14){
 		/*next mode*/
-		MTTKRPmode = 1;
+
+		int prevMode = MTTKRPmode;
+		MTTKRPmode = (1 + Opt.mode) % TiledX[0].ndims;
 		mili = 0, GPUTime = 0, CPUtimer = 0;
 		dLoc = 0, dSlcLoc = 0, dSlcIdxLoc = 0; dFbrLoc =0, dFbrIdxLoc = 0, dFbrLoc2= 0;
 
 		// MTTKRP on mode mode 0 changed DU0. To pass correctness for now initializing to 2 again.
-		int mode = 0;
+		int mode = prevMode;
 	    for(long r = 0; r < U[mode].nRows; ++r){
 	        for(long c = 0; c < U[mode].nCols; ++c) // or u[mode].nCols 
 	            U[mode].vals[r * U[mode].nCols + c] = 2;//0.1 * drand48(); //1 ;//(r * R + c + 1); //
@@ -1428,12 +1430,13 @@ int MTTKRP_TILED_HCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 
 		/*next-next mode*/
 
-		MTTKRPmode = 2;
+		prevMode = MTTKRPmode;
+		MTTKRPmode = (2 + Opt.mode) % TiledX[0].ndims;
 		mili = 0, GPUTime = 0, CPUtimer = 0;
 		dLoc = 0, dSlcLoc = 0, dSlcIdxLoc = 0; dFbrLoc =0, dFbrIdxLoc = 0, dFbrLoc2= 0;
 
 		// MTTKRP on mode mode 1 changed DU1. To pass correctness for now initializing to 2 again.
-		mode = 1;
+		mode = prevMode;
 	    for(long r = 0; r < U[mode].nRows; ++r){
 	        for(long c = 0; c < U[mode].nCols; ++c) // or u[mode].nCols 
 	            U[mode].vals[r * U[mode].nCols + c] = 2;//0.1 * drand48(); //1 ;//(r * R + c + 1); //
@@ -1533,7 +1536,7 @@ int MTTKRP_TILED_HCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 		cudaStreamDestroy(streams[bin]);
 	// check correctness
 	if(Opt.impType == 14){
-		MTTKRPmode = 2;
+		MTTKRPmode = 1;
 		checkCuda(cudaMemcpy(&U[MTTKRPmode].vals[0], dU2, U[MTTKRPmode].nRows * U[MTTKRPmode].nCols * sizeof(DTYPE), cudaMemcpyDeviceToHost), 0);
 	}
 	else
