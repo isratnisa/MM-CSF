@@ -340,7 +340,7 @@ int main(int argc, char* argv[]){
             cout << "checking only the last mode" << endl;
 
         // Opt.mode = ((Opt.impType == 12) ? 2 : Opt.mode);
-        Opt.mode = ((Opt.impType == 12) ? 2 : 1);
+        Opt.mode = ((Opt.impType == 12) ? 2 : 2);
         int mode = Opt.mode;
         int nr = U[mode].nRows;  
         int nc = U[mode].nCols;
