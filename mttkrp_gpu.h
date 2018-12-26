@@ -1125,10 +1125,10 @@ int MTTKRP_TILED_HCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 	DTYPE *dVals;
 	ITYPE dLoc = 0, dSlcLoc = 0, dSlcIdxLoc = 0, dFbrLoc =0,  dFbrIdxLoc =0, dBinLoc = 0, dFbrLoc2 =0;
 	ITYPE totNnz = 0, totSlcPtr = 0, totSlcIdx = 0, totFbrPtr = 0, totFbrIdx = 0, totFbrPtr2 = 0;
-	int warpPerSlice = Opt.warpPerSlice;
-	int logOfWarpPerSlice = log2(Opt.warpPerSlice);
-	int TbPerSlc = 1;
-	int logOfTPS = log2(TbPerSlc);
+	// int warpPerSlice = Opt.warpPerSlice;
+	// int logOfWarpPerSlice = log2(Opt.warpPerSlice);
+	// int TbPerSlc = 1;
+	// int logOfTPS = log2(TbPerSlc);
 
 	// All tile same mode
 	ITYPE mode0 = TiledX[0].modeOrder[0];
@@ -1227,6 +1227,41 @@ int MTTKRP_TILED_HCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
     cudaStream_t streams[Opt.nBin];
     float mili = 0, GPUTime = 0, CPUtimer = 0;
 
+    int smallBinEndsAt = 5;
+
+    /* Warp per slice and threadblock per size */
+    int *warpPerSlc = new int[Opt.nBin];
+    int *logOfWarpPerSlc = new int[Opt.nBin];
+    int *TbPerSlc = new int[Opt.nBin];
+    int *logOfTbPerSlc = new int[Opt.nBin];
+
+    for (int bin = 0; bin < Opt.nBin ; ++bin){
+    	
+    	TbPerSlc[bin] = 1;
+		warpPerSlc[bin] = ((bin > 0) ? 2 << (bin - 1) : 1);
+		
+		if(warpPerSlc[bin] > 16)		
+			warpPerSlc[bin] = 16;
+
+		logOfWarpPerSlc[bin] = log2(warpPerSlc[bin]);
+
+		TbPerSlc[bin] = 1;
+		logOfTbPerSlc[bin] = 0;
+		
+		if (bin >= smallBinEndsAt){
+		
+			TbPerSlc[bin] = 1 << (bin - smallBinEndsAt + 1); // 1st big bin starts with 1 TB 1 << 1 not 1 << 5
+			if(TbPerSlc[bin] > 32) TbPerSlc[bin] = 32;		
+			logOfTbPerSlc[bin] = log2(TbPerSlc[bin]);
+
+			warpPerSlc[bin] = 16;
+			logOfWarpPerSlc[bin] = 4;
+		}
+    }
+
+    // TBD: change warpPerSlc to warpPerSlc[bin] and all
+	int slcPerTb = 1;
+
 	dLoc = 0, dSlcLoc = 0, dSlcIdxLoc = 0; dFbrLoc =0, dFbrIdxLoc = 0, dFbrLoc2= 0;
 
 	for (int bin = 0; bin < Opt.nBin; ++bin)
@@ -1259,68 +1294,47 @@ int MTTKRP_TILED_HCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 			// Process small bins.. accepts 2 slice 1 TB
 
 			double t0 = seconds();
-			checkCuda(cudaEventRecord(start), __LINE__);
+			cuda_timer_start(start);
 			
 			for (int bin = 0; bin < Opt.nBin ; ++bin){
 
 				if(bin < smallBinEndsAt){
-
-					TbPerSlc = 1;
-
-					warpPerSlice = ((bin > 0) ? 2 << (bin - 1) : 1);
-
-					if(warpPerSlice > 16)		
-						warpPerSlice = 16;
-					logOfWarpPerSlice = log2(warpPerSlice);
-					slcPerTb = 16 / warpPerSlice;
-
-					ITYPE shSize = 0;//slcPerTb * 32 * sizeof(DTYPE);
+					
+					ITYPE shSize = 0;//slcPerTb * 32 * sizeof(DTYPE); slcPerTb = 16 / warpPerSlc[bin];
 
 					dBinLoc += ((bin > 0) ? TiledX[tile].slcMapperBin[bin-1].size() : 0);
 
-					grid.x = ( TbPerSlc * warpPerSlice * 32 * TiledX[tile].slcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
+					grid.x = ( TbPerSlc[bin] * warpPerSlc[bin] * 32 * TiledX[tile].slcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
 
 					if(TiledX[0].ndims == 3)
 						mttkrp_HCSR_kernel_smllBin<<<grid, block, shSize , streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
 						dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[tile].slcMapperBin[bin].size(), 
-						dU0, dU1, dU2, Opt.mode, Opt.R, warpPerSlice, logOfWarpPerSlice, TbPerSlc, logOfTPS); 
+						dU0, dU1, dU2, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin], TbPerSlc[bin], logOfTbPerSlc[bin]); 
 					else
 						mttkrp_HCSR_kernel_smllBin_4D<<<grid, block, shSize , streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
 						dInds3 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc, dfbrIdx1 + dFbrIdxLoc, dFbrPtr2 + dFbrLoc2, dFbrIdx2 + dFbrLoc2, TiledX[tile].slcMapperBin[bin].size(), 
-						dU0, dU1, dU2, dU3, Opt.mode, Opt.R, warpPerSlice, logOfWarpPerSlice, TbPerSlc, logOfTPS); 
+						dU0, dU1, dU2, dU3, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin], TbPerSlc[bin], logOfTbPerSlc[bin]); 
 				}
 				
 				// Processing heavy bin.. multiple TB per slice
 				else{
 
-					TbPerSlc = 1 << (bin - smallBinEndsAt + 1); // 1st big bin starts with 1 TB 1 << 1 not 1 << 5
-					if(TbPerSlc > 32) TbPerSlc = 32;		
-					logOfTPS = log2(TbPerSlc);
-
-					warpPerSlice = 16;
-					logOfWarpPerSlice = 4;
-
 					dBinLoc += TiledX[tile].slcMapperBin[bin-1].size();
 							
-					grid.x = (TbPerSlc * warpPerSlice * 32 * TiledX[tile].slcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
+					grid.x = (TbPerSlc[bin] * warpPerSlc[bin] * 32 * TiledX[tile].slcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
 							
 					if(TiledX[0].ndims == 3)
 						mttkrp_HCSR_kernel_hvyBin<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
 						dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[tile].slcMapperBin[bin].size(), 
-						dU0, dU1, dU2, Opt.mode, Opt.R, warpPerSlice, logOfWarpPerSlice,  TbPerSlc, logOfTPS); 
+						dU0, dU1, dU2, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin],  TbPerSlc[bin], logOfTbPerSlc[bin]); 
 					else
 						mttkrp_HCSR_kernel_hvyBin_4D<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
 						dInds3 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc, dfbrIdx1 + dFbrIdxLoc, dFbrPtr2 + dFbrLoc2, dFbrIdx2 + dFbrLoc2, TiledX[tile].slcMapperBin[bin].size(), 
-						dU0, dU1, dU2, dU3, Opt.mode, Opt.R, warpPerSlice, logOfWarpPerSlice,  TbPerSlc, logOfTPS); 
-
+						dU0, dU1, dU2, dU3, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin],  TbPerSlc[bin], logOfTbPerSlc[bin]); 
 				}
-
 			}
-			checkCuda(cudaEventRecord(stop), __LINE__);
-		    cudaEventSynchronize(stop);
-		    checkCuda(cudaEventElapsedTime(&mili, start, stop), __LINE__);
+			cuda_timer_stop(start, stop, mili);
 		    CPUtimer += seconds() - t0;
-		    cudaDeviceSynchronize();
 		    GPUTime += mili;
 
 		    if(Opt.verbose){
@@ -1333,12 +1347,10 @@ int MTTKRP_TILED_HCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 	}
 	cout << "HCSR-GPU:mode- " << MTTKRPmode <<" :" << GPUTime << endl;
 	
-
-
 	/*MTTKRP on next and next-next mode using same-CSF*/
 	if(Opt.impType == 14){
+		
 		/*next mode*/
-
 		int prevMode = MTTKRPmode;
 		MTTKRPmode = (1 + Opt.mode) % TiledX[0].ndims;
 		int mode = prevMode;
@@ -1379,59 +1391,38 @@ int MTTKRP_TILED_HCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 				// Process small bins.. accepts 2 slice 1 TB
 
 				double t0 = seconds();
-				checkCuda(cudaEventRecord(start), __LINE__);
+				cuda_timer_start(start);
 				
 				for (int bin = 0; bin < Opt.nBin ; ++bin){
 
 					if(bin < smallBinEndsAt){
 
-						TbPerSlc = 1;
-
-						warpPerSlice = ((bin > 0) ? 2 << (bin - 1) : 1);
-
-						if(warpPerSlice > 16)		
-							warpPerSlice = 16;
-						logOfWarpPerSlice = log2(warpPerSlice);
-						slcPerTb = 16 / warpPerSlice;
-
-						ITYPE shSize = 0;//slcPerTb * 32 * sizeof(DTYPE);
-
 						dBinLoc += ((bin > 0) ? TiledX[tile].slcMapperBin[bin-1].size() : 0);
 
-						grid.x = ( TbPerSlc * warpPerSlice * 32 * TiledX[tile].slcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
+						grid.x = ( TbPerSlc[bin] * warpPerSlc[bin] * 32 * TiledX[tile].slcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
 
 						if(TiledX[0].ndims == 3)
-							mttkrp_MIHCSR_kernel_smllBin_mode0_using201<<<grid, block, shSize , streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
+							mttkrp_MIHCSR_kernel_smllBin_mode0_using201<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
 							dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[tile].slcMapperBin[bin].size(), 
-							dU1, dU2, dU0, Opt.mode, Opt.R, warpPerSlice, logOfWarpPerSlice, TbPerSlc, logOfTPS); 
+							dU1, dU2, dU0, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin], TbPerSlc[bin], logOfTbPerSlc[bin]); 
 					}
 					
 					// Processing heavy bin.. multiple TB per slice
 					else{
 
-						TbPerSlc = 1 << (bin - smallBinEndsAt + 1); // 1st big bin starts with 1 TB 1 << 1 not 1 << 5
-						if(TbPerSlc > 32) TbPerSlc = 32;		
-						logOfTPS = log2(TbPerSlc);
-
-						warpPerSlice = 16;
-						logOfWarpPerSlice = 4;
-
 						dBinLoc += TiledX[tile].slcMapperBin[bin-1].size();
 								
-						grid.x = (TbPerSlc * warpPerSlice * 32 * TiledX[tile].slcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
+						grid.x = (TbPerSlc[bin] * warpPerSlc[bin] * 32 * TiledX[tile].slcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
 								
 						if(TiledX[0].ndims == 3)
 							mttkrp_HCSR_kernel_hvyBin_mode0_using201<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
 							dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[tile].slcMapperBin[bin].size(), 
-							dU1, dU2, dU0, Opt.mode, Opt.R, warpPerSlice, logOfWarpPerSlice,  TbPerSlc, logOfTPS); 
+							dU1, dU2, dU0, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin],  TbPerSlc[bin], logOfTbPerSlc[bin]); 
 					}
-
 				}
-				checkCuda(cudaEventRecord(stop), __LINE__);
-			    cudaEventSynchronize(stop);
-			    checkCuda(cudaEventElapsedTime(&mili, start, stop), __LINE__);
+
+				cuda_timer_stop(start, stop, mili);
 			    CPUtimer += seconds() - t0;
-			    cudaDeviceSynchronize();
 			    GPUTime += mili;
 
 			    if(Opt.verbose){
@@ -1485,59 +1476,38 @@ int MTTKRP_TILED_HCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 				int slcPerTb = 0;
 
 				double t0 = seconds();
-				checkCuda(cudaEventRecord(start), __LINE__);
+				cuda_timer_start(start);
+				// checkCuda(cudaEventRecord(start), __LINE__);
 				
 				for (int bin = 0; bin < Opt.nBin ; ++bin){
 
 					if(bin < smallBinEndsAt){
 
-						TbPerSlc = 1;
-
-						warpPerSlice = ((bin > 0) ? 2 << (bin - 1) : 1);
-
-						if(warpPerSlice > 16)		
-							warpPerSlice = 16;
-						logOfWarpPerSlice = log2(warpPerSlice);
-						slcPerTb = 16 / warpPerSlice;
-
-						ITYPE shSize = 0;//slcPerTb * 32 * sizeof(DTYPE);
-
 						dBinLoc += ((bin > 0) ? TiledX[tile].slcMapperBin[bin-1].size() : 0);
 
-						grid.x = ( TbPerSlc * warpPerSlice * 32 * TiledX[tile].slcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
+						grid.x = ( TbPerSlc[bin] * warpPerSlc[bin] * 32 * TiledX[tile].slcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
 
 						if(TiledX[0].ndims == 3)
-							mttkrp_MIHCSR_kernel_smllBin_mode1_using201<<<grid, block, shSize , streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
+							mttkrp_MIHCSR_kernel_smllBin_mode1_using201<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
 							dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[tile].slcMapperBin[bin].size(), 
-							dU2, dU0, dU1, Opt.mode, Opt.R, warpPerSlice, logOfWarpPerSlice, TbPerSlc, logOfTPS); 
+							dU2, dU0, dU1, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin], TbPerSlc[bin], logOfTbPerSlc[bin]); 
 					}
 					
 					// Processing heavy bin.. multiple TB per slice
 					else{
 
-						TbPerSlc = 1 << (bin - smallBinEndsAt + 1); // 1st big bin starts with 1 TB 1 << 1 not 1 << 5
-						if(TbPerSlc > 32) TbPerSlc = 32;		
-						logOfTPS = log2(TbPerSlc);
-
-						warpPerSlice = 16;
-						logOfWarpPerSlice = 4;
-
 						dBinLoc += TiledX[tile].slcMapperBin[bin-1].size();
 								
-						grid.x = (TbPerSlc * warpPerSlice * 32 * TiledX[tile].slcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
+						grid.x = (TbPerSlc[bin] * warpPerSlc[bin] * 32 * TiledX[tile].slcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
 								
 						if(TiledX[0].ndims == 3)
 							mttkrp_HCSR_kernel_hvyBin_mode1_using201<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
 							dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[tile].slcMapperBin[bin].size(), 
-							dU2, dU0, dU1, Opt.mode, Opt.R, warpPerSlice, logOfWarpPerSlice,  TbPerSlc, logOfTPS); 
+							dU2, dU0, dU1, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin],  TbPerSlc[bin], logOfTbPerSlc[bin]); 
 					}
-
 				}
-				checkCuda(cudaEventRecord(stop), __LINE__);
-			    cudaEventSynchronize(stop);
-			    checkCuda(cudaEventElapsedTime(&mili, start, stop), __LINE__);
+				cuda_timer_stop(start, stop, mili);
 			    CPUtimer += seconds() - t0;
-			    cudaDeviceSynchronize();
 			    GPUTime += mili;
 
 			    if(Opt.verbose){
@@ -1903,10 +1873,10 @@ int MTTKRP_MIHCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt, int MT
 	DTYPE *dVals;
 	ITYPE dLoc = 0, dSlcLoc = 0, dSlcIdxLoc = 0, dFbrLoc =0,  dFbrIdxLoc =0, dBinLoc = 0, dFbrLoc2 =0;
 	ITYPE totNnz = 0, totSlcPtr = 0, totSlcIdx = 0, totFbrPtr = 0, totFbrIdx = 0, totFbrPtr2 = 0;
-	int warpPerSlice = Opt.warpPerSlice;
-	int logOfWarpPerSlice = log2(Opt.warpPerSlice);
-	int TbPerSlc = 1;
-	int logOfTPS = log2(TbPerSlc);
+	// int warpPerSlice = Opt.warpPerSlice;
+	// int logOfWarpPerSlice = log2(Opt.warpPerSlice);
+	// int TbPerSlc = 1;
+	// int logOfTPS = log2(TbPerSlc);
 
 	// All m same mode
 	ITYPE mode0 = TiledX[0].modeOrder[0];
@@ -2019,6 +1989,41 @@ int MTTKRP_MIHCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt, int MT
     cudaStream_t streams[Opt.nBin];
     float mili = 0, GPUTime = 0, CPUtimer = 0;
 
+    int smallBinEndsAt = 5;
+
+    /* Warp per slice and threadblock per slice */
+    int *warpPerSlc = new int[Opt.nBin];
+    int *logOfWarpPerSlc = new int[Opt.nBin];
+    int *TbPerSlc = new int[Opt.nBin];
+    int *logOfTbPerSlc = new int[Opt.nBin];
+
+    for (int bin = 0; bin < Opt.nBin ; ++bin){
+    	
+    	TbPerSlc[bin] = 1;
+		warpPerSlc[bin] = ((bin > 0) ? 2 << (bin - 1) : 1);
+		
+		if(warpPerSlc[bin] > 16)		
+			warpPerSlc[bin] = 16;
+
+		logOfWarpPerSlc[bin] = log2(warpPerSlc[bin]);
+
+		TbPerSlc[bin] = 1;
+		logOfTbPerSlc[bin] = 0;
+		
+		if (bin >= smallBinEndsAt){
+		
+			TbPerSlc[bin] = 1 << (bin - smallBinEndsAt + 1); // 1st big bin starts with 1 TB 1 << 1 not 1 << 5
+			if(TbPerSlc[bin] > 32) TbPerSlc[bin] = 32;		
+			logOfTbPerSlc[bin] = log2(TbPerSlc[bin]);
+
+			warpPerSlc[bin] = 16;
+			logOfWarpPerSlc[bin] = 4;
+		}
+    }
+
+    // TBD: change warpPerSlc to warpPerSlc[bin] and all
+	int slcPerTb = 1;
+
 	dLoc = 0, dSlcLoc = 0, dSlcIdxLoc = 0; dFbrLoc =0, dFbrIdxLoc = 0, dFbrLoc2= 0;
 
 	for (int bin = 0; bin < Opt.nBin; ++bin)
@@ -2062,53 +2067,35 @@ int MTTKRP_MIHCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt, int MT
 
 					if(bin < smallBinEndsAt){
 
-						TbPerSlc = 1;
-
-						warpPerSlice = ((bin > 0) ? 2 << (bin - 1) : 1);
-
-						if(warpPerSlice > 16)		
-							warpPerSlice = 16;
-						logOfWarpPerSlice = log2(warpPerSlice);
-						slcPerTb = 16 / warpPerSlice;
-
-						ITYPE shSize = 0;//slcPerTb * 32 * sizeof(DTYPE);
-
 						dBinLoc += ((bin > 0) ? TiledX[m].slcMapperBin[bin-1].size() : 0);
 
-						grid.x = ( TbPerSlc * warpPerSlice * 32 * TiledX[m].slcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
+						grid.x = ( TbPerSlc[bin] * warpPerSlc[bin] * 32 * TiledX[m].slcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
 
 						if(TiledX[0].ndims == 3)
 							mttkrp_HCSR_kernel_smllBin<<<grid, block, 0 , streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
 							dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].slcMapperBin[bin].size(), 
-							dU0, dU1, dU2, Opt.mode, Opt.R, warpPerSlice, logOfWarpPerSlice, TbPerSlc, logOfTPS); 
+							dU0, dU1, dU2, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin], TbPerSlc[bin], logOfTbPerSlc[bin]); 
 						else
-							mttkrp_HCSR_kernel_smllBin_4D<<<grid, block, shSize , streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
+							mttkrp_HCSR_kernel_smllBin_4D<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
 							dInds3 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc, dfbrIdx1 + dFbrIdxLoc, dFbrPtr2 + dFbrLoc2, dFbrIdx2 + dFbrLoc2, TiledX[m].slcMapperBin[bin].size(), 
-							dU0, dU1, dU2, dU3, Opt.mode, Opt.R, warpPerSlice, logOfWarpPerSlice, TbPerSlc, logOfTPS); 
+							dU0, dU1, dU2, dU3, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin], TbPerSlc[bin], logOfTbPerSlc[bin]); 
 					}
 					
 					// Processing heavy bin.. multiple TB per slice
 					else{
 
-						TbPerSlc = 1 << (bin - smallBinEndsAt + 1); // 1st big bin starts with 1 TB 1 << 1 not 1 << 5
-						if(TbPerSlc > 32) TbPerSlc = 32;		
-						logOfTPS = log2(TbPerSlc);
-
-						warpPerSlice = 16;
-						logOfWarpPerSlice = 4;
-
 						dBinLoc += TiledX[m].slcMapperBin[bin-1].size();
 								
-						grid.x = (TbPerSlc * warpPerSlice * 32 * TiledX[m].slcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
+						grid.x = (TbPerSlc[bin] * warpPerSlc[bin] * 32 * TiledX[m].slcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
 								
 						if(TiledX[0].ndims == 3)
 							mttkrp_HCSR_kernel_hvyBin<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
 							dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].slcMapperBin[bin].size(), 
-							dU0, dU1, dU2, Opt.mode, Opt.R, warpPerSlice, logOfWarpPerSlice,  TbPerSlc, logOfTPS); 
+							dU0, dU1, dU2, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin],  TbPerSlc[bin], logOfTbPerSlc[bin]); 
 						else
 							mttkrp_HCSR_kernel_hvyBin_4D<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
 							dInds3 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc, dfbrIdx1 + dFbrIdxLoc, dFbrPtr2 + dFbrLoc2, dFbrIdx2 + dFbrLoc2, TiledX[m].slcMapperBin[bin].size(), 
-							dU0, dU1, dU2, dU3, Opt.mode, Opt.R, warpPerSlice, logOfWarpPerSlice,  TbPerSlc, logOfTPS); 
+							dU0, dU1, dU2, dU3, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin],  TbPerSlc[bin], logOfTbPerSlc[bin]); 
 					}
 				}
 			}
@@ -2118,60 +2105,40 @@ int MTTKRP_MIHCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt, int MT
 			}
 
 			else if(m == 2){
-
-				int smallBinEndsAt = 5;
 			
 				for (int bin = 0; bin < Opt.nBin ; ++bin){
 
 					if(bin < smallBinEndsAt){
 
-						TbPerSlc = 1;
-
-						warpPerSlice = ((bin > 0) ? 2 << (bin - 1) : 1);
-
-						if(warpPerSlice > 16)		
-							warpPerSlice = 16;
-						logOfWarpPerSlice = log2(warpPerSlice);
-						slcPerTb = 16 / warpPerSlice;
-
-						ITYPE shSize = 0;//slcPerTb * 32 * sizeof(DTYPE);
-
 						dBinLoc += ((bin > 0) ? TiledX[m].slcMapperBin[bin-1].size() : 0);
 
-						grid.x = ( TbPerSlc * warpPerSlice * 32 * TiledX[m].slcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
+						grid.x = ( TbPerSlc[bin] * warpPerSlc[bin] * 32 * TiledX[m].slcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
 
 						if(TiledX[0].ndims == 3)
-							mttkrp_MIHCSR_kernel_smllBin_mode0_using201<<<grid, block, shSize , streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
+							mttkrp_MIHCSR_kernel_smllBin_mode0_using201<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
 							dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].slcMapperBin[bin].size(), 
-							dU0, dU1, dU2, Opt.mode, Opt.R, warpPerSlice, logOfWarpPerSlice, TbPerSlc, logOfTPS); 
+							dU0, dU1, dU2, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin], TbPerSlc[bin], logOfTbPerSlc[bin]); 
 						else
-							mttkrp_HCSR_kernel_smllBin_4D<<<grid, block, shSize , streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
+							mttkrp_HCSR_kernel_smllBin_4D<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
 							dInds3 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc, dfbrIdx1 + dFbrIdxLoc, dFbrPtr2 + dFbrLoc2, dFbrIdx2 + dFbrLoc2, TiledX[m].slcMapperBin[bin].size(), 
-							dU0, dU1, dU2, dU3, Opt.mode, Opt.R, warpPerSlice, logOfWarpPerSlice, TbPerSlc, logOfTPS); 
+							dU0, dU1, dU2, dU3, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin], TbPerSlc[bin], logOfTbPerSlc[bin]); 
 					}
 					
 					// Processing heavy bin.. multiple TB per slice
 					else{
 
-						TbPerSlc = 1 << (bin - smallBinEndsAt + 1); // 1st big bin starts with 1 TB 1 << 1 not 1 << 5
-						if(TbPerSlc > 32) TbPerSlc = 32;		
-						logOfTPS = log2(TbPerSlc);
-
-						warpPerSlice = 16;
-						logOfWarpPerSlice = 4;
-
 						dBinLoc += TiledX[m].slcMapperBin[bin-1].size();
 								
-						grid.x = (TbPerSlc * warpPerSlice * 32 * TiledX[m].slcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
+						grid.x = (TbPerSlc[bin] * warpPerSlc[bin] * 32 * TiledX[m].slcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
 								
 						if(TiledX[0].ndims == 3)
 							mttkrp_HCSR_kernel_hvyBin_mode0_using201<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
 							dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].slcMapperBin[bin].size(), 
-							dU0, dU1, dU2, Opt.mode, Opt.R, warpPerSlice, logOfWarpPerSlice,  TbPerSlc, logOfTPS); 
+							dU0, dU1, dU2, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin],  TbPerSlc[bin], logOfTbPerSlc[bin]); 
 						else
 							mttkrp_HCSR_kernel_hvyBin_4D<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
 							dInds3 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc, dfbrIdx1 + dFbrIdxLoc, dFbrPtr2 + dFbrLoc2, dFbrIdx2 + dFbrLoc2, TiledX[m].slcMapperBin[bin].size(), 
-							dU0, dU1, dU2, dU3, Opt.mode, Opt.R, warpPerSlice, logOfWarpPerSlice,  TbPerSlc, logOfTPS); 
+							dU0, dU1, dU2, dU3, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin],  TbPerSlc[bin], logOfTbPerSlc[bin]); 
 					}
 				}
 			}
@@ -2241,46 +2208,28 @@ int MTTKRP_MIHCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt, int MT
 
 					if(bin < smallBinEndsAt){
 
-						TbPerSlc = 1;
-
-						warpPerSlice = ((bin > 0) ? 2 << (bin - 1) : 1);
-
-						if(warpPerSlice > 16)		
-							warpPerSlice = 16;
-						logOfWarpPerSlice = log2(warpPerSlice);
-						slcPerTb = 16 / warpPerSlice;
-
-						ITYPE shSize = 0;//slcPerTb * 32 * sizeof(DTYPE);
-
 						dBinLoc += ((bin > 0) ? TiledX[m].slcMapperBin[bin-1].size() : 0);
 
-						grid.x = ( TbPerSlc * warpPerSlice * 32 * TiledX[m].slcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
+						grid.x = ( TbPerSlc[bin] * warpPerSlc[bin] * 32 * TiledX[m].slcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
 						
 						//CPU equivalent MTTKRP_MIHCSR_CPU_mode1_using012()
 						if(TiledX[0].ndims == 3)
-							mttkrp_MIHCSR_kernel_smllBin_mode0_using201<<<grid, block, shSize , streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
+							mttkrp_MIHCSR_kernel_smllBin_mode0_using201<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
 							dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].slcMapperBin[bin].size(), 
-							dU1, dU2, dU0, Opt.mode, Opt.R, warpPerSlice, logOfWarpPerSlice, TbPerSlc, logOfTPS); 
+							dU1, dU2, dU0, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin], TbPerSlc[bin], logOfTbPerSlc[bin]); 
 					}
 					
 					// Processing heavy bin.. multiple TB per slice
 					else{
 
-						TbPerSlc = 1 << (bin - smallBinEndsAt + 1); // 1st big bin starts with 1 TB 1 << 1 not 1 << 5
-						if(TbPerSlc > 32) TbPerSlc = 32;		
-						logOfTPS = log2(TbPerSlc);
-
-						warpPerSlice = 16;
-						logOfWarpPerSlice = 4;
-
 						dBinLoc += TiledX[m].slcMapperBin[bin-1].size();
 								
-						grid.x = (TbPerSlc * warpPerSlice * 32 * TiledX[m].slcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
+						grid.x = (TbPerSlc[bin] * warpPerSlc[bin] * 32 * TiledX[m].slcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
 								
 						if(TiledX[0].ndims == 3)
 							mttkrp_HCSR_kernel_hvyBin_mode0_using201<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
 							dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].slcMapperBin[bin].size(), 
-							dU1, dU2, dU0, Opt.mode, Opt.R, warpPerSlice, logOfWarpPerSlice,  TbPerSlc, logOfTPS); 
+							dU1, dU2, dU0, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin],  TbPerSlc[bin], logOfTbPerSlc[bin]); 
 					}
 				}
 			}
@@ -2291,49 +2240,29 @@ int MTTKRP_MIHCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt, int MT
 	
 				for (int bin = 0; bin < Opt.nBin ; ++bin){
 
-					// if(TiledX[m].slcMapperBin[bin].size() == 0) continue;
-
 					if(bin < smallBinEndsAt){
-
-						TbPerSlc = 1;
-
-						warpPerSlice = ((bin > 0) ? 2 << (bin - 1) : 1);
-
-						if(warpPerSlice > 16)		
-							warpPerSlice = 16;
-						logOfWarpPerSlice = log2(warpPerSlice);
-						slcPerTb = 16 / warpPerSlice;
-
-						ITYPE shSize = 0;//slcPerTb * 32 * sizeof(DTYPE);
 
 						dBinLoc += ((bin > 0) ? TiledX[m].slcMapperBin[bin-1].size() : 0);
 
-						grid.x = ( TbPerSlc * warpPerSlice * 32 * TiledX[m].slcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
+						grid.x = ( TbPerSlc[bin] * warpPerSlc[bin] * 32 * TiledX[m].slcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
 						
 						if(TiledX[0].ndims == 3)
-							mttkrp_MIHCSR_kernel_smllBin_mode1_using201<<<grid, block, shSize , streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
+							mttkrp_MIHCSR_kernel_smllBin_mode1_using201<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
 							dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].slcMapperBin[bin].size(), 
-							dU1, dU2, dU0, Opt.mode, Opt.R, warpPerSlice, logOfWarpPerSlice, TbPerSlc, logOfTPS); 						
+							dU1, dU2, dU0, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin], TbPerSlc[bin], logOfTbPerSlc[bin]); 						
 					}
 					
 					// Processing heavy bin.. multiple TB per slice
 					else{
 
-						TbPerSlc = 1 << (bin - smallBinEndsAt + 1); // 1st big bin starts with 1 TB 1 << 1 not 1 << 5
-						if(TbPerSlc > 32) TbPerSlc = 32;		
-						logOfTPS = log2(TbPerSlc);
-
-						warpPerSlice = 16;
-						logOfWarpPerSlice = 4;
-
 						dBinLoc += TiledX[m].slcMapperBin[bin-1].size();
 								
-						grid.x = (TbPerSlc * warpPerSlice * 32 * TiledX[m].slcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
+						grid.x = (TbPerSlc[bin] * warpPerSlc[bin] * 32 * TiledX[m].slcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
 								
 						if(TiledX[0].ndims == 3)
 							mttkrp_HCSR_kernel_hvyBin_mode1_using201<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
 							dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].slcMapperBin[bin].size(), 
-							dU1, dU2, dU0, Opt.mode, Opt.R, warpPerSlice, logOfWarpPerSlice,  TbPerSlc, logOfTPS); 
+							dU1, dU2, dU0, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin],  TbPerSlc[bin], logOfTbPerSlc[bin]); 
 					}
 				}
 			}
@@ -2403,52 +2332,30 @@ int MTTKRP_MIHCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt, int MT
 			
 				for (int bin = 0; bin < Opt.nBin ; ++bin){
 
-					// if(TiledX[m].slcMapperBin[bin].size() == 0) continue;
-
 					if(bin < smallBinEndsAt){
-
-						TbPerSlc = 1;
-
-						warpPerSlice = ((bin > 0) ? 2 << (bin - 1) : 1);
-
-						if(warpPerSlice > 16)		
-							warpPerSlice = 16;
-						logOfWarpPerSlice = log2(warpPerSlice);
-						slcPerTb = 16 / warpPerSlice;
-
-						ITYPE shSize = 0;//slcPerTb * 32 * sizeof(DTYPE);
 
 						dBinLoc += ((bin > 0) ? TiledX[m].slcMapperBin[bin-1].size() : 0);
 
-						grid.x = ( TbPerSlc * warpPerSlice * 32 * TiledX[m].slcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
+						grid.x = ( TbPerSlc[bin] * warpPerSlc[bin] * 32 * TiledX[m].slcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
 						
 						//CPU equivalent MTTKRP_MIHCSR_CPU_mode1_using012()
 						if(TiledX[0].ndims == 3)
-							mttkrp_MIHCSR_kernel_smllBin_mode1_using201<<<grid, block, shSize , streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
+							mttkrp_MIHCSR_kernel_smllBin_mode1_using201<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
 							dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].slcMapperBin[bin].size(), 
-							dU2, dU0, dU1, Opt.mode, Opt.R, warpPerSlice, logOfWarpPerSlice, TbPerSlc, logOfTPS); 
-				
-						
+							dU2, dU0, dU1, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin], TbPerSlc[bin], logOfTbPerSlc[bin]); 			
 					}
 					
 					// Processing heavy bin.. multiple TB per slice
 					else{
 
-						TbPerSlc = 1 << (bin - smallBinEndsAt + 1); // 1st big bin starts with 1 TB 1 << 1 not 1 << 5
-						if(TbPerSlc > 32) TbPerSlc = 32;		
-						logOfTPS = log2(TbPerSlc);
-
-						warpPerSlice = 16;
-						logOfWarpPerSlice = 4;
-
 						dBinLoc += TiledX[m].slcMapperBin[bin-1].size();
 								
-						grid.x = (TbPerSlc * warpPerSlice * 32 * TiledX[m].slcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
+						grid.x = (TbPerSlc[bin] * warpPerSlc[bin] * 32 * TiledX[m].slcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
 								
 						if(TiledX[0].ndims == 3)
 							mttkrp_HCSR_kernel_hvyBin_mode1_using201<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
 							dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].slcMapperBin[bin].size(), 
-							dU2, dU0, dU1, Opt.mode, Opt.R, warpPerSlice, logOfWarpPerSlice,  TbPerSlc, logOfTPS); 
+							dU2, dU0, dU1, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin],  TbPerSlc[bin], logOfTbPerSlc[bin]); 
 					}
 				}
 			}
@@ -2457,51 +2364,31 @@ int MTTKRP_MIHCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt, int MT
 			
 				for (int bin = 0; bin < Opt.nBin ; ++bin){
 
-					// if(TiledX[m].slcMapperBin[bin].size() == 0) continue;
-
 					if(bin < smallBinEndsAt){
-
-						TbPerSlc = 1;
-
-						warpPerSlice = ((bin > 0) ? 2 << (bin - 1) : 1);
-
-						if(warpPerSlice > 16)		
-							warpPerSlice = 16;
-						logOfWarpPerSlice = log2(warpPerSlice);
-						slcPerTb = 16 / warpPerSlice;
-
-						ITYPE shSize = 0;//slcPerTb * 32 * sizeof(DTYPE);
 
 						dBinLoc += ((bin > 0) ? TiledX[m].slcMapperBin[bin-1].size() : 0);
 
-						grid.x = ( TbPerSlc * warpPerSlice * 32 * TiledX[m].slcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
+						grid.x = ( TbPerSlc[bin] * warpPerSlc[bin] * 32 * TiledX[m].slcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
 						
 						//CPU equivalent MTTKRP_MIHCSR_CPU_mode1_using012()
 						if(TiledX[0].ndims == 3)
-							mttkrp_HCSR_kernel_smllBin<<<grid, block, shSize , streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
+							mttkrp_HCSR_kernel_smllBin<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
 							dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].slcMapperBin[bin].size(), 
-							dU2, dU0, dU1, Opt.mode, Opt.R, warpPerSlice, logOfWarpPerSlice, TbPerSlc, logOfTPS); 
+							dU2, dU0, dU1, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin], TbPerSlc[bin], logOfTbPerSlc[bin]); 
 						
 					}
 					
 					// Processing heavy bin.. multiple TB per slice
 					else{
 
-						TbPerSlc = 1 << (bin - smallBinEndsAt + 1); // 1st big bin starts with 1 TB 1 << 1 not 1 << 5
-						if(TbPerSlc > 32) TbPerSlc = 32;		
-						logOfTPS = log2(TbPerSlc);
-
-						warpPerSlice = 16;
-						logOfWarpPerSlice = 4;
-
 						dBinLoc += TiledX[m].slcMapperBin[bin-1].size();
 								
-						grid.x = (TbPerSlc * warpPerSlice * 32 * TiledX[m].slcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
+						grid.x = (TbPerSlc[bin] * warpPerSlc[bin] * 32 * TiledX[m].slcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
 								
 						if(TiledX[0].ndims == 3)
 							mttkrp_HCSR_kernel_hvyBin<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
 							dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].slcMapperBin[bin].size(), 
-							dU2, dU0, dU1, Opt.mode, Opt.R, warpPerSlice, logOfWarpPerSlice,  TbPerSlc, logOfTPS); 
+							dU2, dU0, dU1, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin],  TbPerSlc[bin], logOfTbPerSlc[bin]); 
 					}
 				}
 			}
