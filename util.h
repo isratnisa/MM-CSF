@@ -146,7 +146,8 @@ inline int load_tensor(Tensor &X, const Options &Opt){
     ITYPE index;
     DTYPE vid=0;
 
-    ITYPE switchMode;
+    ITYPE switchMode = 0;
+    bool switchBC =  false;
 
     ifstream fp(filename); 
 
@@ -161,7 +162,20 @@ inline int load_tensor(Tensor &X, const Options &Opt){
 
     for (int i = 0; i < X.ndims; ++i){
         // mode 0 never switches
-        if(X.switchBC && i > 0){
+        fp >> X.dims[i];      
+        X.inds.push_back(std::vector<ITYPE>());
+    }
+
+    // fix it:: hard coded for 3D tensor
+    int mode1 = (1 + Opt.mode) % X.ndims;   
+    int mode2 = (2 + Opt.mode) % X.ndims;
+    if( X.dims[mode1] > X.dims[mode2]) switchBC = true;
+
+    for (int i = 0; i < X.ndims; ++i){
+        
+        // mode 0 never switches
+        if(i > 0 && switchBC){
+
             if(i == 1)
                 switchMode = 2;
             else if(i == 2)
@@ -171,12 +185,7 @@ inline int load_tensor(Tensor &X, const Options &Opt){
             switchMode = i;       
         X.modeOrder.push_back((switchMode + Opt.mode) % X.ndims);
     }
-
-    for (int i = 0; i < X.ndims; ++i){
-        // mode 0 never switches
-        fp >> X.dims[i];      
-        X.inds.push_back(std::vector<ITYPE>());
-    }
+     // if(switchBC) std::swap(X.dims[1], X.dims[2]);
 
     while(fp >> index) {
         X.inds[0].push_back(index-1);
@@ -284,7 +293,6 @@ inline int sort_MI_CSF(const Tensor &X, TiledTensor *MTX, int m){
     //           << MTX[m].vals[idx] <<  std::endl;
     // }
 }
-
 
 inline int print_COOtensor(const Tensor &X){
 
@@ -1193,22 +1201,57 @@ inline int tensor_stats(const Tensor &X){
 /* param: MTX - mode wise tiled X */
 inline int find_hvyslc_allMode(const Tensor &X, TiledTensor *MTX){
  
-    int threshold =  X.totNnz/X.dims[0];
+    int threshold = ( X.totNnz / X.dims[0] + X.totNnz / X.dims[1] + X.totNnz / X.dims[2]) / 3;
 
-    ITYPE mode0 = X.modeOrder[0];
-    ITYPE mode1 = X.modeOrder[1];
-    ITYPE mode2 = X.modeOrder[2];
+    /* initialize MICSF tiles */
+    int mode = 0;
 
-    ITYPE *slcNnzMode0 = new ITYPE[X.dims[0]];
-    ITYPE *slcNnzMode1 = new ITYPE[X.dims[1]];
-    ITYPE *slcNnzMode2 = new ITYPE[X.dims[2]];
+    for (int m = 0; m < X.ndims; ++m){
+        bool switchBC = false;
+        ITYPE switchMode;
+        MTX[m].ndims = X.ndims;
+        MTX[m].dims = new ITYPE[MTX[m].ndims];  
 
-    memset(slcNnzMode0, 0, X.dims[0] * sizeof(ITYPE));
-    memset(slcNnzMode1, 0, X.dims[1] * sizeof(ITYPE));
-    memset(slcNnzMode2, 0, X.dims[2] * sizeof(ITYPE));
-    
+        //setting mode order accroding to mode length
+        int  mMode1 = (1 + m) % X.ndims;
+        int  mMode2 = (2 + m) % X.ndims;
+
+        if( X.dims[mMode1] > X.dims[mMode2]) switchBC = true; else false;  
+        
+        for (int i = 0; i < X.ndims; ++i){
+            MTX[m].inds.push_back(std::vector<ITYPE>());  
+            MTX[m].dims[i] = X.dims[i];
+            // MTX[m].modeOrder.push_back((i+m) % X.ndims);
+
+            if(i > 0 && switchBC){
+
+                if(i == 1) switchMode = 2;
+                else if(i == 2) switchMode = 1;
+            }
+            else
+                switchMode = i;       
+            MTX[m].modeOrder.push_back((m + switchMode) % X.ndims);
+        }         
+    }
+    for (int m = 0; m < X.ndims; ++m)
+
+        cout << "mode order: " << m << ": " << MTX[m].modeOrder[0] << " " << MTX[m].modeOrder[1] << " "
+        << MTX[m].modeOrder[2] << endl; 
+
     /* Populate with nnz for each slice for each mode */
 
+    ITYPE mode0 = 0;//X.modeOrder[0];
+    ITYPE mode1 = 1;//X.modeOrder[1];
+    ITYPE mode2 = 2;//X.modeOrder[2];
+
+    ITYPE *slcNnzMode0 = new ITYPE[X.dims[mode0]];
+    ITYPE *slcNnzMode1 = new ITYPE[X.dims[mode1]];
+    ITYPE *slcNnzMode2 = new ITYPE[X.dims[mode2]];
+
+    memset(slcNnzMode0, 0, X.dims[mode0] * sizeof(ITYPE));
+    memset(slcNnzMode1, 0, X.dims[mode1] * sizeof(ITYPE));
+    memset(slcNnzMode2, 0, X.dims[mode2] * sizeof(ITYPE));
+    
     for(ITYPE x=0; x<X.totNnz; ++x) {
 
         ITYPE idx0 = X.inds[mode0][x];
@@ -1220,21 +1263,6 @@ inline int find_hvyslc_allMode(const Tensor &X, TiledTensor *MTX){
         slcNnzMode2[idx2]++;
     }
 
-    /* split nnz based on heavy write occurance */
-
-    int mode = 0;
-
-    for (int m = 0; m < X.ndims; ++m){
-        MTX[m].ndims = X.ndims;
-        MTX[m].dims = new ITYPE[MTX[m].ndims];    
-        
-        for (int i = 0; i < X.ndims; ++i){
-            MTX[m].inds.push_back(std::vector<ITYPE>());  
-            MTX[m].dims[i] = X.dims[i];
-            MTX[m].modeOrder.push_back((i+m) % X.ndims);
-        }           
-    }
-
     for (int idx = 0; idx < X.totNnz; ++idx){
 
         ITYPE idx0 = X.inds[mode0][idx];
@@ -1242,9 +1270,11 @@ inline int find_hvyslc_allMode(const Tensor &X, TiledTensor *MTX){
         ITYPE idx2 = X.inds[mode2][idx];
 
         if ( slcNnzMode2[idx2] > threshold )     
-            mode = mode2;
+              mode = mode2;
+        else if ( slcNnzMode1[idx1] > threshold )     
+           mode = mode1;
         else
-            mode = mode0;
+             mode = mode0;
 
         for (int i = 0; i < X.ndims; ++i)  {
             MTX[mode].inds[i].push_back(X.inds[i][idx]); 
@@ -1252,10 +1282,13 @@ inline int find_hvyslc_allMode(const Tensor &X, TiledTensor *MTX){
         MTX[mode].vals.push_back(X.vals[idx]);      
     }
 
+    cout << "Threshold: "<< threshold << endl ;
+     cout << "nnz in CSFs: ";
     for (int m = 0; m < X.ndims; ++m){
         MTX[m].totNnz = MTX[m].vals.size();
-        cout << threshold << " " << m << " " << MTX[m].totNnz << endl;
+        cout << m << ": " << MTX[m].totNnz << " ";
     }
+    cout << endl;
 }
 
 // inline int compute_accessK(Tensor &X, const Options &Opt){
@@ -1371,6 +1404,21 @@ inline void write_output_ttmY(semiSpTensor &Y, ITYPE mode, string outFile){
             fp << std::setprecision(2) << Y.vals[i * Y.nCols + j] << "\t" ;
         }
         fp << endl;  
+    }
+}
+
+
+inline void print_matrix(Matrix *U, ITYPE mode){
+    
+    cout << U[mode].nRows << " x " << U[mode].nCols << " matrix" << endl;
+    cout << std::fixed;
+    for (int i = 0; i < U[mode].nRows; ++i)
+    {
+        for (int j = 0; j < U[mode].nCols; ++j)
+        {
+            cout << std::setprecision(2) << U[mode].vals[i * U[mode].nCols + j] << "\t" ;
+        }
+        cout << endl;  
     }
 }
 

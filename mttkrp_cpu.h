@@ -23,9 +23,9 @@ int MTTKRP_HCSR_CPU_mode1(const Tensor &X, Matrix *U, const Options &Opt, const 
 
 int MTTKRP_HCSR_CPU_mode2(const Tensor &X, Matrix *U, const Options &Opt, const int mode);
 
-int MTTKRP_MIHCSR_CPU_mode0_using201(const TiledTensor *TiledX, Matrix *U, const Options &Opt, const int mode, const int MTTKRPmode);
+int MTTKRP_MIHCSR_CPU_FBR_ATOMICS(const TiledTensor *TiledX, Matrix *U, const Options &Opt, const int mode, const int MTTKRPmode);
 
-int MTTKRP_MIHCSR_CPU_mode1_using201(const TiledTensor *TiledX, Matrix *U, const Options &Opt, const int HCSRmode, const int MTTKRPmode);
+int MTTKRP_MIHCSR_CPU_ALL_ATOMICS(const TiledTensor *TiledX, Matrix *U, const Options &Opt, const int HCSRmode, const int MTTKRPmode);
 
 int MTTKRP_HCSR_CPU_4D(const Tensor &X, Matrix *U, const Options &Opt);
 
@@ -36,8 +36,6 @@ int MTTKRP_HYB_COO_CPU_naive_4D(const HYBTensor &HybX, Matrix *U, const Options 
 int MTTKRP_HYB_HCSR_CPU(HYBTensor &X, Matrix *U, Options &Opt);
 
 int MTTKRP_HYB_HCSR_CPU_4D(const HYBTensor &X, Matrix *U, const Options &Opt);
-
-// int MTTKRP_HYB_HCSR_CPU_4D(HYBTensor &X, Matrix *U, Options &Opt);
 
 int MTTKRP_HYB_CPU(HYBTensor &HybX, Matrix *U, Options &Opt);
 

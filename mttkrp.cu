@@ -168,6 +168,8 @@ int main(int argc, char* argv[]){
 
         // TILED HCSR GPU
         else if(Opt.impType == 8){
+             cout << "Sorted mode: " << X.modeOrder[0] << " " << X.modeOrder[1] << " " <<X.modeOrder[2] << endl;
+
             MTTKRP_TILED_HCSR_GPU(TiledX, U, Opt);
         }
 
@@ -186,26 +188,32 @@ int main(int argc, char* argv[]){
             cout << "Starting sameCSF: MTTKRP on all modes using same CSF" << endl;
         sort_COOtensor(X);
 
+         cout << "Sorted mode: " << X.modeOrder[0] << " " << X.modeOrder[1] << " " <<X.modeOrder[2] << endl;
+
+
         /* on CPU non tiled */
         if(Opt.impType == 13){ 
 
             create_HCSR(X, Opt); 
+
+            for (int MTTKRPmode = 0; MTTKRPmode < X.ndims; ++MTTKRPmode) {
+                    
+                cout << "MTTKRP on mode " <<  MTTKRPmode << " using same-CSF" << endl;
+                randomize_mats(X, U, Opt);
+                zero_mat(X, U, MTTKRPmode);  
          
-            int MTTKRPmode = Opt.mode;
-            cout << "MTTKRP on mode " <<  MTTKRPmode << " using same-CSF" << endl;
-            ((X.ndims == 3) ?  MTTKRP_HCSR_CPU(X, TiledX, U, Opt) :  MTTKRP_HCSR_CPU_4D(X, U, Opt)); 
-
-            MTTKRPmode = (Opt.mode + 1) % X.ndims;
-            cout << "MTTKRP on mode " <<  MTTKRPmode << " using same-CSF" << endl;
-            randomize_mats(X, U, Opt);
-            zero_mat(X, U, MTTKRPmode); 
-            MTTKRP_HCSR_CPU_mode1(X, U, Opt,  MTTKRPmode);
-
-            MTTKRPmode = (Opt.mode + 2) % X.ndims;
-            cout << "MTTKRP on mode " <<  MTTKRPmode << " using same-CSF" << endl;
-            randomize_mats(X, U, Opt);
-            zero_mat(X, U, MTTKRPmode); 
-            MTTKRP_HCSR_CPU_mode2(X, U, Opt,  MTTKRPmode);
+                // if( MTTKRPmode == Opt.mode){
+                if( X.modeOrder[0] ==  MTTKRPmode)     
+                    ((X.ndims == 3) ?  MTTKRP_HCSR_CPU(X, TiledX, U, Opt) :  MTTKRP_HCSR_CPU_4D(X, U, Opt)); 
+                
+                // MTTKRPmode = (Opt.mode + 1) % X.ndims;
+                else if( X.modeOrder[1] ==  MTTKRPmode)   
+                    MTTKRP_HCSR_CPU_mode1(X, U, Opt,  MTTKRPmode);
+                
+                // MTTKRPmode = (Opt.mode + 2) % X.ndims;
+                else if( X.modeOrder[2] ==  MTTKRPmode)  
+                    MTTKRP_HCSR_CPU_mode2(X, U, Opt,  MTTKRPmode);              
+            }
  
         }
        /* on GPU tiled (skipping on tiled gpu due to time constraints)*/
@@ -237,23 +245,8 @@ int main(int argc, char* argv[]){
                 if(TiledX[tile].totNnz > 0)
                     make_TiledBin(TiledX, Opt, tile);
             }
-
-         
-            int MTTKRPmode = Opt.mode;
+            
             MTTKRP_TILED_HCSR_GPU(TiledX, U, Opt);
-            // ((X.ndims == 3) ?  MTTKRP_HCSR_CPU(X, TiledX, U, Opt) :  MTTKRP_HCSR_CPU_4D(X, U, Opt)); 
-
-            // MTTKRPmode = (Opt.mode + 1) % X.ndims;
-            // cout << "MTTKRP on mode " <<  MTTKRPmode << " using same-CSF" << endl;
-            // randomize_mats(X, U, Opt);
-            // zero_mat(X, U, MTTKRPmode); 
-            // MTTKRP_HCSR_CPU_mode1(X, U, Opt,  MTTKRPmode);
-
-            // MTTKRPmode = (Opt.mode + 2) % X.ndims;
-            // cout << "MTTKRP on mode " <<  MTTKRPmode << " using same-CSF" << endl;
-            // randomize_mats(X, U, Opt);
-            // zero_mat(X, U, MTTKRPmode); 
-            // MTTKRP_HCSR_CPU_mode2(X, U, Opt,  MTTKRPmode);
  
         }
         // /* on GPU */
@@ -273,52 +266,78 @@ int main(int argc, char* argv[]){
         if(Opt.verbose)
             cout << "Starting MI-CSF" << endl;
         sort_COOtensor(X);
+        // print_COOtensor(X);
         TiledTensor ModeWiseTiledX[X.ndims];
         find_hvyslc_allMode(X, ModeWiseTiledX);
-        // print_COOtensor( X);
-
-        int *curMode = new int [X.ndims];    
+        // print_matrix(U,1);
+        // print_matrix(U,2);
         
         for (int m = 0; m < X.ndims; ++m){
-
-            curMode[m] = (m + Opt.mode) % X.ndims; 
             
             if(ModeWiseTiledX[m].totNnz > 0){           
                 sort_MI_CSF(X, ModeWiseTiledX, m);
                 create_TiledHCSR(ModeWiseTiledX, Opt, m);
                 make_TiledBin(ModeWiseTiledX, Opt, m);
-                // print_TiledHCSRtensor(ModeWiseTiledX, m);
             }
         }
+
         /* on CPU */
         if(Opt.impType == 11){ 
+            
+            for (int MTTKRPmode = 0; MTTKRPmode < X.ndims; ++MTTKRPmode){
 
-            // cout << "MTTKRP on mode 0 using MI-CSF" << endl;
-            int MTTKRPmode = 0;
+                cout << "MTTKRP on mode " << MTTKRPmode  << " using MI-CSF" << endl;
+
+                randomize_mats(X, U, Opt);
+                zero_mat(X, U, MTTKRPmode); 
+
+                for (int m = 0; m < X.ndims; ++m){
+
+                    int mode0 = ModeWiseTiledX[m].modeOrder[0];
+                    int mode1 = ModeWiseTiledX[m].modeOrder[1];
+                    int mode2 = ModeWiseTiledX[m].modeOrder[2];
+
+                    if (mode0 == MTTKRPmode && ModeWiseTiledX[m].totNnz)
+                        MTTKRP_MIHCSR_CPU(ModeWiseTiledX, U, Opt, m);
+                    
+                    else if (mode1 == MTTKRPmode && ModeWiseTiledX[m].totNnz )
+                        MTTKRP_MIHCSR_CPU_FBR_ATOMICS(ModeWiseTiledX, U, Opt, m, MTTKRPmode);
+
+                    else if (mode2 == MTTKRPmode && ModeWiseTiledX[m].totNnz )
+                        MTTKRP_MIHCSR_CPU_ALL_ATOMICS(ModeWiseTiledX, U, Opt, m, MTTKRPmode);
+                }
+            }
+        }
+
             // if (ModeWiseTiledX[0].totNnz) MTTKRP_MIHCSR_CPU(ModeWiseTiledX, U, Opt, 0);
-            // if (ModeWiseTiledX[2].totNnz) MTTKRP_MIHCSR_CPU_mode0_using201(ModeWiseTiledX, U, Opt, 2, MTTKRPmode);
+            // if (ModeWiseTiledX[1].totNnz) MTTKRP_MIHCSR_CPU_ALL_ATOMICS(ModeWiseTiledX, U, Opt, 1, MTTKRPmode);
+            // //if (ModeWiseTiledX[2].totNnz) MTTKRP_MIHCSR_CPU_FBR_ATOMICS(ModeWiseTiledX, U, Opt, 2, MTTKRPmode);
+            // if (ModeWiseTiledX[2].totNnz) MTTKRP_MIHCSR_CPU_ALL_ATOMICS(ModeWiseTiledX, U, Opt, 2, MTTKRPmode);
+            
 
             // cout << "MTTKRP on mode 1 using MI-CSF" << endl;
             // MTTKRPmode = 1;
             // randomize_mats(X, U, Opt);
             // zero_mat(X, U, MTTKRPmode); 
-            // if (ModeWiseTiledX[0].totNnz) MTTKRP_MIHCSR_CPU_mode0_using201(ModeWiseTiledX, U, Opt, 0, MTTKRPmode);
-            // if (ModeWiseTiledX[2].totNnz) MTTKRP_MIHCSR_CPU_mode1_using201(ModeWiseTiledX, U, Opt, 2, MTTKRPmode));
+            // if (ModeWiseTiledX[0].totNnz) MTTKRP_MIHCSR_CPU_FBR_ATOMICS(ModeWiseTiledX, U, Opt, 0, MTTKRPmode);
+            // if (ModeWiseTiledX[1].totNnz) MTTKRP_MIHCSR_CPU(ModeWiseTiledX, U, Opt, MTTKRPmode);
+            // if (ModeWiseTiledX[2].totNnz) MTTKRP_MIHCSR_CPU_ALL_ATOMICS(ModeWiseTiledX, U, Opt, 2, MTTKRPmode);
 
-
-            cout << "MTTKRP on mode 2 using MI-CSF" << endl;
-             MTTKRPmode = 2;
-            randomize_mats(X, U, Opt);
-            zero_mat(X, U, MTTKRPmode); 
-            if (ModeWiseTiledX[0].totNnz) MTTKRP_MIHCSR_CPU_mode1_using201(ModeWiseTiledX, U, Opt, 0, MTTKRPmode);
-            if (ModeWiseTiledX[2].totNnz) MTTKRP_MIHCSR_CPU(ModeWiseTiledX, U, Opt, MTTKRPmode);
-   
-            // write_output(U, 2, "tmp2");  
-        }
+            // cout << "MTTKRP on mode 2 using MI-CSF" << endl;
+            // MTTKRPmode = 2;
+            // randomize_mats(X, U, Opt);
+            // zero_mat(X, U, MTTKRPmode); 
+            // if (ModeWiseTiledX[0].totNnz) MTTKRP_MIHCSR_CPU_ALL_ATOMICS(ModeWiseTiledX, U, Opt, 0, MTTKRPmode);
+            // if (ModeWiseTiledX[1].totNnz) MTTKRP_MIHCSR_CPU_FBR_ATOMICS(ModeWiseTiledX, U, Opt, 1, MTTKRPmode);
+            // if (ModeWiseTiledX[2].totNnz) MTTKRP_MIHCSR_CPU(ModeWiseTiledX, U, Opt, MTTKRPmode);
+ 
+        
         /* on GPU */
         else if(Opt.impType == 12){ 
-            cout << "MTTKRP on mode 0 using MI-CSF" << endl;
-            MTTKRP_MIHCSR_GPU(ModeWiseTiledX, U, Opt, 0);
+
+            cout << "Starting MI-CSF on GPU" << endl;
+
+            MTTKRP_MIHCSR_GPU(ModeWiseTiledX, U, Opt);
             // MTTKRP_MIHCSR_GPU_mode0_using201(ModeWiseTiledX, U, Opt, 2);
 
         }
@@ -338,9 +357,8 @@ int main(int argc, char* argv[]){
         }
         if(Opt.verbose && Opt.impType == 12)
             cout << "checking only the last mode" << endl;
-
+        Opt.mode = X.modeOrder[2];
         // Opt.mode = ((Opt.impType == 12) ? 2 : Opt.mode);
-        Opt.mode = ((Opt.impType == 12) ? 2 : 2);
         int mode = Opt.mode;
         int nr = U[mode].nRows;  
         int nc = U[mode].nCols;
