@@ -967,6 +967,13 @@ inline int create_TiledHCSR(TiledTensor *TiledX, const Options &Opt, int tile){
     
     TiledX[tile].nFibers = TiledX[tile].fbrPtr[1].size() - 1;
 
+    cout << tile << " nnz: " <<  TiledX[tile].totNnz << " nslices: " <<  TiledX[tile].fbrPtr[0].size()  << " nFibers: " << TiledX[tile].nFibers << endl;
+    if(tile == TiledX[tile].ndims - 1){
+        int totslc = TiledX[0].fbrPtr[0].size() + TiledX[1].fbrPtr[0].size() +TiledX[2].fbrPtr[0].size();
+        int totFbr = TiledX[0].fbrPtr[1].size() + TiledX[1].fbrPtr[1].size() +TiledX[2].fbrPtr[1].size();
+        cout << "Total slice: " << totslc << " " << totFbr << endl;
+    }
+
     return 0;
 }
 
@@ -1104,8 +1111,6 @@ inline int make_TiledBin(TiledTensor *TiledX, const Options & Opt, int tile){
 
     UB[0] = 1025; //mergin first 5 bin
 
-    if(Opt.tileSize < 5000)
-        UB[0] = 1025;
     // Populate bin
     for(ITYPE slc = 0; slc < TiledX[tile].fbrIdx[0].size(); ++slc) {
         int nnzSlc = 0;
@@ -1269,12 +1274,23 @@ inline int find_hvyslc_allMode(const Tensor &X, TiledTensor *MTX){
         ITYPE idx1 = X.inds[mode1][idx];
         ITYPE idx2 = X.inds[mode2][idx];
 
-        if ( slcNnzMode2[idx2] > threshold )     
-              mode = mode2;
-        else if ( slcNnzMode1[idx1] > threshold )     
-           mode = mode1;
+        if ( slcNnzMode2[idx2] > slcNnzMode0[idx0] && slcNnzMode2[idx2] > slcNnzMode1[idx1] )     
+            mode = mode2;
+
+        if ( slcNnzMode0[idx0] > slcNnzMode1[idx1] && slcNnzMode0[idx0] > slcNnzMode2[idx2] )     
+            mode = mode0;
+        else if ( slcNnzMode1[idx1] > slcNnzMode0[idx0] && slcNnzMode1[idx1] > slcNnzMode2[idx2]  )     
+            mode = mode1;
         else
-             mode = mode0;
+            mode = mode0;
+            // mode = mode2;
+
+        // if ( slcNnzMode0[idx0] > threshold )     
+        //     mode = mode0;
+        // else if ( slcNnzMode1[idx1] > threshold )     
+        //     mode = mode1;
+        // else
+        //     mode = mode2;
 
         for (int i = 0; i < X.ndims; ++i)  {
             MTX[mode].inds[i].push_back(X.inds[i][idx]); 
@@ -1283,12 +1299,12 @@ inline int find_hvyslc_allMode(const Tensor &X, TiledTensor *MTX){
     }
 
     cout << "Threshold: "<< threshold << endl ;
-     cout << "nnz in CSFs: ";
+     // cout << "nnz in CSFs: ";
     for (int m = 0; m < X.ndims; ++m){
         MTX[m].totNnz = MTX[m].vals.size();
-        cout << m << ": " << MTX[m].totNnz << " ";
+        // cout << m << ": " << MTX[m].totNnz << " ";
     }
-    cout << endl;
+    // cout << endl;
 }
 
 // inline int compute_accessK(Tensor &X, const Options &Opt){
@@ -1375,15 +1391,13 @@ inline int randomize_mats(const Tensor &X, Matrix *U, const Options &Opt){
         srand48(0L);
         for(long r = 0; r < U[mode].nRows; ++r){
             for(long c = 0; c < U[mode].nCols; ++c) // or u[mode].nCols 
-                U[mode].vals[r * U[mode].nCols + c] = 2;//0.1 * drand48(); //1 ;//(r * R + c + 1); //
+                U[mode].vals[r * U[mode].nCols + c] =  mode + .5;//1.5 * (mode+1);;// * drand48(); //1 ;//; //
         }
     }
     return 0;
 }
 
 inline int zero_mat(const Tensor &X, Matrix *U, ITYPE mode){
-
-    srand48(0L);
     
     for(long r = 0; r < U[mode].nRows; ++r){
         for(long c = 0; c < U[mode].nCols; ++c) // or u[mode].nCols 
@@ -1412,9 +1426,11 @@ inline void print_matrix(Matrix *U, ITYPE mode){
     
     cout << U[mode].nRows << " x " << U[mode].nCols << " matrix" << endl;
     cout << std::fixed;
-    for (int i = 0; i < U[mode].nRows; ++i)
+    // for (int i = 0; i < U[mode].nRows; ++i)
+    for (int i = 0; i < 5; ++i)
     {
-        for (int j = 0; j < U[mode].nCols; ++j)
+        // for (int j = 0; j < U[mode].nCols; ++j)
+        for (int j = 0; j < 5; ++j)
         {
             cout << std::setprecision(2) << U[mode].vals[i * U[mode].nCols + j] << "\t" ;
         }

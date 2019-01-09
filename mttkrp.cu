@@ -180,7 +180,7 @@ int main(int argc, char* argv[]){
         }
     }
 
-     /* same-CSF*/
+     /* single-CSF*/
 
     else if(Opt.impType == 13 || Opt.impType == 14 ){
 
@@ -245,9 +245,7 @@ int main(int argc, char* argv[]){
                 if(TiledX[tile].totNnz > 0)
                     make_TiledBin(TiledX, Opt, tile);
             }
-            
             MTTKRP_TILED_HCSR_GPU(TiledX, U, Opt);
- 
         }
         // /* on GPU */
         // else if(Opt.impType == 14){ 
@@ -365,9 +363,10 @@ int main(int argc, char* argv[]){
         DTYPE *out = (DTYPE*)malloc(nr * nc * sizeof(DTYPE));
         memcpy(out, U[mode].vals, nr*nc * sizeof(DTYPE));
 
+        randomize_mats(X, U, Opt);
         zero_mat(X, U, mode);
-        cout << "correctness with COO " << endl;
-        ((X.ndims == 3) ?  MTTKRP_COO_CPU(X, U, Opt) :  MTTKRP_COO_CPU_4D(X, U, Opt));   
+        cout << "correctness with COO on mode " << mode << endl;
+        ((X.ndims == 3) ?  MTTKRP_COO_CPU(X, U, Opt) :  MTTKRP_COO_CPU_4D(X, U, Opt));  
         correctness_check(out, U[mode].vals, nr, nc);
 
     }

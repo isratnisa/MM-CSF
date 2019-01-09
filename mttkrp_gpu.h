@@ -763,16 +763,19 @@ __global__ void mttkrp_MIHCSR_kernel_smllBin_all_atomic(DTYPE * vals, ITYPE *dfb
 
 		for (int fbr = fb_st + workId; fbr < fb_end; fbr+=warpPerSlice){
 			
-			tmp_val = 0;
-			unsigned int idx2 = fbrIdx1[fbr];// dInds1[fbrPtr1[fbr]];    
+			unsigned int idx2 = fbrIdx1[fbr];// dInds1[fbrPtr1[fbr]];  
+
+            // for(unsigned int r=laneId; r<R; r+=32) 
+            // 	tmp_val = dU1[idx1 * R + r] * dU2[idx2 * R + r] ;
 	        
 	        for(unsigned int x = fbrPtr1[fbr]; x < fbrPtr1[fbr+1]; ++x) {
 
 		        unsigned int idx0 = dInds2[x];                    
 
 	            for(unsigned int r=laneId; r<R; r+=32) {
-	            	tmp_val =  vals[x] * dU1[idx1 * R + r] * dU2[idx2 * R + r] ;
-	                atomicAdd(&dU0[idx0 * R + r], tmp_val); 
+	            	tmp_val =   vals[x] * dU1[idx1 * R + r] * dU2[idx2 * R + r] ;
+	            	atomicAdd(&dU0[idx0 * R + r], tmp_val);
+	                // atomicAdd(&dU0[idx0 * R + r], (tmp_val * vals[x]) ); 
 	            }
 	        }   	
 		}
@@ -803,13 +806,17 @@ __global__ void mttkrp_MIHCSR_kernel_hvyBin_all_atomic(DTYPE * vals, ITYPE *dfbr
 		for (int fbr = fb_st + workId; fbr < fb_end && fbr < fbrPtr0[mappedSlc+1]; fbr+=warpPerSlice){
 			
 			tmp_val = 0;
-			unsigned int idx2 = fbrIdx1[fbr];// dInds1[fbrPtr1[fbr]];    
+			unsigned int idx2 = fbrIdx1[fbr];// dInds1[fbrPtr1[fbr]]; 
+
+			// for(unsigned int r=laneId; r<R; r+=32) 
+   //          	tmp_val = dU1[idx1 * R + r] * dU2[idx2 * R + r] ;  
 	        
 	        for(unsigned int x = fbrPtr1[fbr]; x < fbrPtr1[fbr+1]; ++x) {
 
 		        unsigned int idx0 = dInds2[x];                    
 
 	            for(unsigned int r=laneId; r<R; r+=32) {
+	            	// atomicAdd(&dU0[idx0 * R + r], (tmp_val * vals[x]) ); 
 	            	tmp_val =  vals[x] * dU1[idx1 * R + r] * dU2[idx2 * R + r] ;
 	                atomicAdd(&dU0[idx0 * R + r], tmp_val); 
 	            }
@@ -1264,9 +1271,7 @@ int MTTKRP_TILED_HCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 		cudaStreamCreate(&streams[bin]);
 
 	/*MTTKRP on Opt.mode*/
-	int MTTKRPmode = Opt.mode;
-
-	int orgMode = (MTTKRPmode + 2) % TiledX[0].ndims;
+	int MTTKRPmode = mode0;//Opt.mode;
 
 	if(performMTTKRPMode){
 		
@@ -1349,20 +1354,21 @@ int MTTKRP_TILED_HCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 	if(Opt.impType == 14){
 		
 		/*next mode*/
-		int prevMode = MTTKRPmode;
-		MTTKRPmode = (1 + Opt.mode) % TiledX[0].ndims;
+		// int prevMode = mode0;//MTTKRPmode;
+		MTTKRPmode = mode1;//(1 + Opt.mode) % TiledX[0].ndims;
 
-		int mode = prevMode;
+		// int mode = mode0;
 
 		if(performMTTKRPnMode){
 
 			mili = 0, GPUTime = 0, CPUtimer = 0;
 			dLoc = 0, dSlcLoc = 0, dSlcIdxLoc = 0; dFbrLoc =0, dFbrIdxLoc = 0, dFbrLoc2= 0;
 
-			// MTTKRP on mode mode 0 changed DU0. To pass correctness for now initializing to 2 again.
-		    for(long r = 0; r < U[mode].nRows; ++r){
-		        for(long c = 0; c < U[mode].nCols; ++c) // or u[mode].nCols 
-		            U[mode].vals[r * U[mode].nCols + c] = 2;//0.1 * drand48(); //1 ;//(r * R + c + 1); //
+			//  U[mode].vals is all 0.To pass correctness for now initializing to 2 again.
+
+		    for(long r = 0; r < U[mode0].nRows; ++r){
+		        for(long c = 0; c < U[mode0].nCols; ++c) // or u[mode].nCols 
+		            U[mode0].vals[r * U[mode0].nCols + c] = mode0 + .5;//2 * drand48(); //1 ;//(r * R + c + 1); //
 		    }
 
 		    checkCuda(cudaMemcpy(dU0, &(U[mode0].vals[0]), U[mode0].nRows * U[mode0].nCols * sizeof(DTYPE), cudaMemcpyHostToDevice), 0);	
@@ -1437,8 +1443,8 @@ int MTTKRP_TILED_HCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 
 		/*next-next mode*/
 
-		prevMode = MTTKRPmode;
-		MTTKRPmode = (2 + Opt.mode) % TiledX[0].ndims;
+		// prevMode = MTTKRPmode;
+		MTTKRPmode = mode2;//(2 + Opt.mode) % TiledX[0].ndims;
 
 		if(performMTTKRPnnMode){
 
@@ -1446,10 +1452,11 @@ int MTTKRP_TILED_HCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 			dLoc = 0, dSlcLoc = 0, dSlcIdxLoc = 0; dFbrLoc =0, dFbrIdxLoc = 0, dFbrLoc2= 0;
 
 			// MTTKRP on mode mode 1 changed DU1. To pass correctness for now initializing to 2 again.
-			mode = prevMode;
-		    for(long r = 0; r < U[mode].nRows; ++r){
-		        for(long c = 0; c < U[mode].nCols; ++c) // or u[mode].nCols 
-		            U[mode].vals[r * U[mode].nCols + c] = 2;//0.1 * drand48(); //1 ;//(r * R + c + 1); //
+			// mode = mode1;//prevMode;
+			//  srand48(0L);
+		    for(long r = 0; r < U[mode1].nRows; ++r){
+		        for(long c = 0; c < U[mode1].nCols; ++c) // or u[mode].nCols 
+		            U[mode1].vals[r * U[mode1].nCols + c] = mode1 + .5;// drand48(); //1 ;//(r * R + c + 1); //
 		    }
 
 		    checkCuda(cudaMemcpy(dU1, &(U[mode1].vals[0]), U[mode1].nRows * U[mode1].nCols * sizeof(DTYPE), cudaMemcpyHostToDevice), 0);	
