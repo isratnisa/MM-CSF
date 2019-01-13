@@ -356,17 +356,19 @@ int main(int argc, char* argv[]){
         if(Opt.verbose && Opt.impType == 12)
             cout << "checking only the last mode" << endl;
         Opt.mode = X.modeOrder[2];
-        // Opt.mode = ((Opt.impType == 12) ? 2 : Opt.mode);
+        Opt.mode = 2;//((Opt.impType == 12) ? 2 : Opt.mode);
         int mode = Opt.mode;
         int nr = U[mode].nRows;  
         int nc = U[mode].nCols;
         DTYPE *out = (DTYPE*)malloc(nr * nc * sizeof(DTYPE));
         memcpy(out, U[mode].vals, nr*nc * sizeof(DTYPE));
+        // print_matrix(U, mode);
 
         randomize_mats(X, U, Opt);
         zero_mat(X, U, mode);
+
         cout << "correctness with COO on mode " << mode << endl;
-        ((X.ndims == 3) ?  MTTKRP_COO_CPU(X, U, Opt) :  MTTKRP_COO_CPU_4D(X, U, Opt));  
+        ((X.ndims == 3) ?  MTTKRP_COO_CPU(X, U, Opt) :  MTTKRP_COO_CPU_4D(X, U, Opt));
         correctness_check(out, U[mode].vals, nr, nc);
 
     }

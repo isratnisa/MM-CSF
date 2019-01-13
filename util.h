@@ -1156,6 +1156,7 @@ inline int tensor_stats(const Tensor &X){
     double stdDev = 0, stdDevFbr = 0;
     int avgSlcNnz = X.totNnz/X.dims[mode0]; // int to use stdDev
     int avgFbrNnz = X.totNnz/X.nFibers;
+    int singleSliceFromAllMode = 0;
 
     // ofstream ofslc("slc_info.txt");
  
@@ -1207,6 +1208,8 @@ inline int tensor_stats(const Tensor &X){
 inline int find_hvyslc_allMode(const Tensor &X, TiledTensor *MTX){
  
     int threshold = ( X.totNnz / X.dims[0] + X.totNnz / X.dims[1] + X.totNnz / X.dims[2]) / 3;
+    int singleSliceFromAllMode;
+    int actvInd0 = 0, actvInd = 0, actvInd2 = 0;
 
     /* initialize MICSF tiles */
     int mode = 0;
@@ -1238,10 +1241,23 @@ inline int find_hvyslc_allMode(const Tensor &X, TiledTensor *MTX){
             MTX[m].modeOrder.push_back((m + switchMode) % X.ndims);
         }         
     }
-    for (int m = 0; m < X.ndims; ++m)
 
+    // MTX[0].modeOrder[0] = 0;
+    // MTX[0].modeOrder[1] = 1;
+    // MTX[0].modeOrder[2] = 2;
+
+    // MTX[1].modeOrder[0] = 1;
+    // MTX[1].modeOrder[1] = 0;
+    // MTX[1].modeOrder[2] = 2;
+
+    // MTX[2].modeOrder[0] = 2;
+    // MTX[2].modeOrder[1] = 0;
+    // MTX[2].modeOrder[2] = 1;
+
+    for (int m = 0; m < X.ndims; ++m)
         cout << "mode order: " << m << ": " << MTX[m].modeOrder[0] << " " << MTX[m].modeOrder[1] << " "
         << MTX[m].modeOrder[2] << endl; 
+    
 
     /* Populate with nnz for each slice for each mode */
 
@@ -1268,21 +1284,42 @@ inline int find_hvyslc_allMode(const Tensor &X, TiledTensor *MTX){
         slcNnzMode2[idx2]++;
     }
 
+
     for (int idx = 0; idx < X.totNnz; ++idx){
 
         ITYPE idx0 = X.inds[mode0][idx];
         ITYPE idx1 = X.inds[mode1][idx];
         ITYPE idx2 = X.inds[mode2][idx];
 
-        if ( slcNnzMode2[idx2] > slcNnzMode0[idx0] && slcNnzMode2[idx2] > slcNnzMode1[idx1] )     
-            mode = mode2;
-
-        if ( slcNnzMode0[idx0] > slcNnzMode1[idx1] && slcNnzMode0[idx0] > slcNnzMode2[idx2] )     
-            mode = mode0;
-        else if ( slcNnzMode1[idx1] > slcNnzMode0[idx0] && slcNnzMode1[idx1] > slcNnzMode2[idx2]  )     
+        bool mode0True = true; bool mode1True = false; bool mode2True = false;
+     
+        if ( slcNnzMode1[idx1] > slcNnzMode0[idx0] && slcNnzMode1[idx1] > slcNnzMode2[idx2]  )     
             mode = mode1;
+        else if ( slcNnzMode2[idx2] > slcNnzMode0[idx0] && slcNnzMode2[idx2] > slcNnzMode1[idx1] )     
+            mode = mode2;   
+        // else if ( slcNnzMode0[idx0] > slcNnzMode1[idx1] && slcNnzMode0[idx0] > slcNnzMode2[idx2] )     
+        //     mode = mode0;
+        // else if ( slcNnzMode2[idx2] > slcNnzMode1[idx1] && slcNnzMode2[idx2] > slcNnzMode0[idx0] )     
+        //     mode = mode2;
+
         else
             mode = mode0;
+       
+        // else{
+        //      singleSliceFromAllMode++;
+        //     // if(mode0True == true) 
+        //     //     mode1True = false; mode2True = false;
+        //     // }
+
+        //     // if(mode0True == true)
+        //     //     mode = mode0;
+        //     // else if(mode1True == true)
+        //     //     mode = mode1;
+        //     // else if (mode2True == true)
+        //     //     mode = mode2;
+        // }
+
+
             // mode = mode2;
 
         // if ( slcNnzMode0[idx0] > threshold )     
@@ -1291,20 +1328,25 @@ inline int find_hvyslc_allMode(const Tensor &X, TiledTensor *MTX){
         //     mode = mode1;
         // else
         //     mode = mode2;
+        
+        slcNnzMode0[X.inds[mode0][idx]]--;
+        slcNnzMode1[X.inds[mode1][idx]]--;
+        slcNnzMode2[X.inds[mode2][idx]]--;
+
 
         for (int i = 0; i < X.ndims; ++i)  {
             MTX[mode].inds[i].push_back(X.inds[i][idx]); 
         }
         MTX[mode].vals.push_back(X.vals[idx]);      
     }
-
+    cout << "singleSliceFromAllMode " << singleSliceFromAllMode << endl;
     cout << "Threshold: "<< threshold << endl ;
-     // cout << "nnz in CSFs: ";
+    cout << "nnz in CSFs: ";
     for (int m = 0; m < X.ndims; ++m){
         MTX[m].totNnz = MTX[m].vals.size();
-        // cout << m << ": " << MTX[m].totNnz << " ";
+        cout << m << ": " << MTX[m].totNnz << " ";
     }
-    // cout << endl;
+    cout << endl;
 }
 
 // inline int compute_accessK(Tensor &X, const Options &Opt){
