@@ -113,6 +113,7 @@ public:
     ITYPE warpPerSlice = 4;
     ITYPE nTile = 1;
     ITYPE tileSize;
+    ITYPE gridSize = 512;
     ITYPE TBsize = 512;
     bool verbose = false;     // if true change matrix rand() to 1
     bool correctness = false; 
@@ -1248,7 +1249,7 @@ inline int find_hvyslc_allMode(const Tensor &X, TiledTensor *MTX, Options & Opt)
  
     int threshold = ( X.totNnz / X.dims[0] + X.totNnz / X.dims[1] + X.totNnz / X.dims[2]) / 3;
     int singleSliceFromAllMode;
-    int thNnzInTile = X.totNnz+1;
+    int thNnzInTile = X.totNnz*.5;
 
 
     /* initialize MICSF tiles */
@@ -1285,28 +1286,28 @@ inline int find_hvyslc_allMode(const Tensor &X, TiledTensor *MTX, Options & Opt)
     //     cout << x <<" " << Opt.m0 << " " <<  MTX[0].modeOrder[0]  << " " <<  MTX[0].modeOrder[1]
     // <<" " <<  MTX[0].modeOrder[2] << endl;
     // Opt.m0 = 1245;
-    stringstream t0(Opt.m0); 
+    // stringstream t0(Opt.m0); 
 
-    int x = 0; 
-    t0 >> x; 
+    // int x = 0; 
+    // t0 >> x; 
 
-    MTX[0].modeOrder[0] = (x/100) % 10;
-    MTX[0].modeOrder[1] = (x/10)  % 10;
-    MTX[0].modeOrder[2] = x     % 10;
+    // MTX[0].modeOrder[0] = (x/100) % 10;
+    // MTX[0].modeOrder[1] = (x/10)  % 10;
+    // MTX[0].modeOrder[2] = x     % 10;
     
-    stringstream t1(Opt.m1); 
-    t1 >> x; 
+    // stringstream t1(Opt.m1); 
+    // t1 >> x; 
 
-    MTX[1].modeOrder[0] = (x/100) % 10;
-    MTX[1].modeOrder[1] = (x/10)  % 10;
-    MTX[1].modeOrder[2] = x     % 10;
+    // MTX[1].modeOrder[0] = (x/100) % 10;
+    // MTX[1].modeOrder[1] = (x/10)  % 10;
+    // MTX[1].modeOrder[2] = x     % 10;
     
-    stringstream t2(Opt.m2); 
-    t2 >> x; 
+    // stringstream t2(Opt.m2); 
+    // t2 >> x; 
 
-    MTX[2].modeOrder[0] = (x/100) % 10;
-    MTX[2].modeOrder[1] = (x/10)  % 10;
-    MTX[2].modeOrder[2] = x     % 10;
+    // MTX[2].modeOrder[0] = (x/100) % 10;
+    // MTX[2].modeOrder[1] = (x/10)  % 10;
+    // MTX[2].modeOrder[2] = x     % 10;
     
 
     /* Populate with nnz for each slice for each mode */
@@ -1430,52 +1431,7 @@ inline int find_hvyslc_allMode(const Tensor &X, TiledTensor *MTX, Options & Opt)
     // cout << endl;
 }
 
-// inline int compute_accessK(Tensor &X, const Options &Opt){
 
-//     ITYPE mode2 = X.modeOrder[2];
-//     X.accessK = new ITYPE[X.dims[mode2]];
-//     memset(X.accessK, 0, X.dims[mode2] * sizeof(ITYPE));
-    
-//     for(ITYPE x = 0; x < X.totNnz; ++x) {
-    
-//        ITYPE idx2 = X.inds[mode2][x];
-//        X.accessK[idx2]++;
-//     } 
-//     // for (int i = 0; i <  X.dims[mode2]; ++i)
-//     // {
-//     //     cout << i <<": " << X.accessK[i] << endl; 
-//     // }
-// }
-
-// inline int create_write_heavy(Tensor &X, const Options &Opt){
-
-//     int shLimit = 192;
-//     int nnzSlc = 0;
-//     int nRwBin = 3;
-
-//     for (int b = 0; b < nRwBin; ++b)
-//     {
-//         X.rwBin.push_back(std::vector<ITYPE>());
-//     }
-//     cout <<  X.rwBin[0].size() <<" " <<  X.rwBin[1].size() << endl;
-//     for(ITYPE slc = 0; slc < X.sliceIdx.size(); ++slc) {
-
-//         for (int fbr = X.slicePtr[slc]; fbr < X.slicePtr[slc+1]; ++fbr){              
-//             nnzSlc += X.fiberPtr[fbr+1] - X.fiberPtr[fbr]; 
-//         }
-
-//         //for now just write only bin
-//         //bin 0 write heavy
-//         //bin 1 ready heavy
-//         //bin 3 equal == COO
-//         if (nnzSlc > shLimit) {
-//             X.rwBin[0].push_back(slc);
-//         }
-//         else
-//             X.rwBin[1].push_back(slc);      
-//     }
-//     return 0;
-// }
 
 
 inline int prepare_Y(const Tensor &X, semiSpTensor &Y, const Options &Opt){
@@ -1672,6 +1628,10 @@ inline Options parse_cmd_options(int argc, char **argv) {
             param.TBsize = atoi(argv[i]);
             break;
 
+        case 'g':
+            param.gridSize = atoi(argv[i]);
+            break;
+
         case 'v':
             if(atoi(argv[i]) == 1)
                 param.verbose = true;
@@ -1723,6 +1683,53 @@ inline Options parse_cmd_options(int argc, char **argv) {
 
     return param;
 }
+
+// inline int compute_accessK(Tensor &X, const Options &Opt){
+
+//     ITYPE mode2 = X.modeOrder[2];
+//     X.accessK = new ITYPE[X.dims[mode2]];
+//     memset(X.accessK, 0, X.dims[mode2] * sizeof(ITYPE));
+    
+//     for(ITYPE x = 0; x < X.totNnz; ++x) {
+    
+//        ITYPE idx2 = X.inds[mode2][x];
+//        X.accessK[idx2]++;
+//     } 
+//     // for (int i = 0; i <  X.dims[mode2]; ++i)
+//     // {
+//     //     cout << i <<": " << X.accessK[i] << endl; 
+//     // }
+// }
+
+// inline int create_write_heavy(Tensor &X, const Options &Opt){
+
+//     int shLimit = 192;
+//     int nnzSlc = 0;
+//     int nRwBin = 3;
+
+//     for (int b = 0; b < nRwBin; ++b)
+//     {
+//         X.rwBin.push_back(std::vector<ITYPE>());
+//     }
+//     cout <<  X.rwBin[0].size() <<" " <<  X.rwBin[1].size() << endl;
+//     for(ITYPE slc = 0; slc < X.sliceIdx.size(); ++slc) {
+
+//         for (int fbr = X.slicePtr[slc]; fbr < X.slicePtr[slc+1]; ++fbr){              
+//             nnzSlc += X.fiberPtr[fbr+1] - X.fiberPtr[fbr]; 
+//         }
+
+//         //for now just write only bin
+//         //bin 0 write heavy
+//         //bin 1 ready heavy
+//         //bin 3 equal == COO
+//         if (nnzSlc > shLimit) {
+//             X.rwBin[0].push_back(slc);
+//         }
+//         else
+//             X.rwBin[1].push_back(slc);      
+//     }
+//     return 0;
+// }
 #endif
 
 

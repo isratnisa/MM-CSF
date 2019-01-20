@@ -268,6 +268,7 @@ int main(int argc, char* argv[]){
             if(ModeWiseTiledX[m].totNnz > 0){           
                 sort_MI_CSF(X, ModeWiseTiledX, m);
                 create_TiledHCSR(ModeWiseTiledX, Opt, m);
+                create_fbrLikeSlcInds(ModeWiseTiledX, m);
                 make_TiledBin(ModeWiseTiledX, Opt, m);
             }
         }
@@ -324,7 +325,7 @@ int main(int argc, char* argv[]){
         }
         if(Opt.verbose && Opt.impType == 12)
             cout << "checking only the last mode" << endl;
-        Opt.mode = X.modeOrder[2];
+        Opt.mode = 2;//X.modeOrder[2];
         // Opt.mode = 1;//((Opt.impType == 12) ? 2 : Opt.mode);
         int mode = Opt.mode;
         int nr = U[mode].nRows;  
@@ -333,7 +334,7 @@ int main(int argc, char* argv[]){
         memcpy(out, U[mode].vals, nr*nc * sizeof(DTYPE));
         // print_matrix(U, mode);
 
-        cout << "change double, mode sort, exec file" << endl; 
+        // cout << "change double, mode sort, exec file" << endl; 
 
         randomize_mats(X, U, Opt);
         zero_mat(X, U, mode);
