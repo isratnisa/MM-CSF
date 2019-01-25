@@ -162,7 +162,7 @@ int MTTKRP_HCSR_CPU_mode1(const Tensor &X, Matrix *U, const Options &Opt, const 
                 memset(tmp_val, 0, R * sizeof(DTYPE));
                 
                 ITYPE idx0 = X.fbrIdx[1][fbr];
-                ITYPE idx2 = X.fbrLikeSlcInds[fbr];
+                ITYPE idx2 = X.fbrLikeSlcInds[fbr]; //2S +2F + M  now 3F + M
                  
                 for(ITYPE x = X.fbrPtr[1][fbr]; x < X.fbrPtr[1][fbr+1]; ++x) {
 

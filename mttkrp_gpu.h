@@ -1520,13 +1520,12 @@ int MTTKRP_TILED_HCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 		}
 	}
 	allModeGPUTime += GPUTime;
-	cout << "HCSR-GPU:mode- " << MTTKRPmode <<" :" << GPUTime << endl;
+	cout << "singleCSF-GPU-mode " << MTTKRPmode <<" :" << GPUTime << "," << endl;
 	
 	/*MTTKRP on next and next-next mode using same-CSF*/
 	if(Opt.impType == 14){
 		
 		/*next mode*/
-		// int prevMode = mode0;//MTTKRPmode;
 		MTTKRPmode = mode1;//(1 + Opt.mode) % TiledX[0].ndims;
 
 		if(performMTTKRPnMode){
@@ -1535,7 +1534,6 @@ int MTTKRP_TILED_HCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 			dLoc = 0, dSlcLoc = 0, dSlcIdxLoc = 0; dFbrLoc =0, dFbrIdxLoc = 0, dFbrLoc2= 0;
 
 			//  U[mode].vals is all 0.To pass correctness for now initializing to 2 again.
-
 		    for(long r = 0; r < U[mode0].nRows; ++r){
 		        for(long c = 0; c < U[mode0].nCols; ++c) // or u[mode].nCols 
 		            U[mode0].vals[r * U[mode0].nCols + c] = mode0 + .5;//2 * drand48(); //1 ;//(r * R + c + 1); //
@@ -1579,43 +1577,43 @@ int MTTKRP_TILED_HCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 				double t0 = seconds();
 				cuda_timer_start(start);
 				
-				// if(useLoop)
-				// 	mttkrp_MIHCSR_kernel_fbr_atomic_fbrLvlPar_loop<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dFbrLikeSlcInds + dFbrLoc, 
-				// dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[tile].nFibers, 
-				// dU1, dU2, dU0, Opt.mode, Opt.R, warpPerFbr, logOfWarpPerFbr);
+				if(useLoop)
+					mttkrp_MIHCSR_kernel_fbr_atomic_fbrLvlPar_loop<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dFbrLikeSlcInds + dFbrLoc, 
+				dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[tile].nFibers, 
+				dU1, dU2, dU0, Opt.mode, Opt.R, warpPerFbr, logOfWarpPerFbr);
 				
-				// else
-				// 	mttkrp_MIHCSR_kernel_fbr_atomic_fbrLvlPar<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dFbrLikeSlcInds + dFbrLoc, 
-				// dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[tile].nFibers, 
-				// dU1, dU2, dU0, Opt.mode, Opt.R, warpPerFbr, logOfWarpPerFbr);
+				else
+					mttkrp_MIHCSR_kernel_fbr_atomic_fbrLvlPar<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dFbrLikeSlcInds + dFbrLoc, 
+				dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[tile].nFibers, 
+				dU1, dU2, dU0, Opt.mode, Opt.R, warpPerFbr, logOfWarpPerFbr);
 		
-				for (int bin = 0; bin < Opt.nBin ; ++bin){
+				// for (int bin = 0; bin < Opt.nBin ; ++bin){
 
-					if(bin < smallBinEndsAt){
+				// 	if(bin < smallBinEndsAt){
 
-						dBinLoc += ((bin > 0) ? TiledX[tile].slcMapperBin[bin-1].size() : 0);
+				// 		dBinLoc += ((bin > 0) ? TiledX[tile].slcMapperBin[bin-1].size() : 0);
 
-						grid.x = ( TbPerSlc[bin] * warpPerSlc[bin] * 32 * TiledX[tile].slcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
+				// 		grid.x = ( TbPerSlc[bin] * warpPerSlc[bin] * 32 * TiledX[tile].slcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
 
-						if(TiledX[0].ndims == 3)
-							mttkrp_MIHCSR_kernel_smllBin_fbr_atomic<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
-							dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[tile].slcMapperBin[bin].size(), 
-							dU1, dU2, dU0, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin], TbPerSlc[bin], logOfTbPerSlc[bin]); 
-					}
+				// 		if(TiledX[0].ndims == 3)
+				// 			mttkrp_MIHCSR_kernel_smllBin_fbr_atomic<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
+				// 			dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[tile].slcMapperBin[bin].size(), 
+				// 			dU1, dU2, dU0, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin], TbPerSlc[bin], logOfTbPerSlc[bin]); 
+				// 	}
 					
-					// Processing heavy bin.. multiple TB per slice
-					else{
+				// 	// Processing heavy bin.. multiple TB per slice
+				// 	else{
 
-						dBinLoc += TiledX[tile].slcMapperBin[bin-1].size();
+				// 		dBinLoc += TiledX[tile].slcMapperBin[bin-1].size();
 								
-						grid.x = (TbPerSlc[bin] * warpPerSlc[bin] * 32 * TiledX[tile].slcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
+				// 		grid.x = (TbPerSlc[bin] * warpPerSlc[bin] * 32 * TiledX[tile].slcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
 								
-						if(TiledX[0].ndims == 3)
-							mttkrp_MIHCSR_kernel_hvyBin_fbr_atomic<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
-							dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[tile].slcMapperBin[bin].size(), 
-							dU1, dU2, dU0, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin],  TbPerSlc[bin], logOfTbPerSlc[bin]); 
-					}
-				}
+				// 		if(TiledX[0].ndims == 3)
+				// 			mttkrp_MIHCSR_kernel_hvyBin_fbr_atomic<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
+				// 			dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[tile].slcMapperBin[bin].size(), 
+				// 			dU1, dU2, dU0, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin],  TbPerSlc[bin], logOfTbPerSlc[bin]); 
+				// 	}
+				// }
 
 				cuda_timer_stop(start, stop, mili);
 			    CPUtimer += seconds() - t0;
@@ -1630,7 +1628,7 @@ int MTTKRP_TILED_HCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 			}
 		} 
 		allModeGPUTime += GPUTime;
-		cout << "HCSR-GPU:mode- " << MTTKRPmode <<" :" << GPUTime << endl;
+		cout << "singleCSF-GPU-mode " << MTTKRPmode <<" :" << GPUTime << "," << endl;
 
 		/*next-next mode*/
 
@@ -1740,11 +1738,13 @@ int MTTKRP_TILED_HCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 				} 
 			} 
 			allModeGPUTime += GPUTime; 
-			cout << "HCSR-GPU:mode- " << MTTKRPmode <<" :" << GPUTime << endl;
+			cout << "singleCSF-GPU-mode " << MTTKRPmode <<" :" << GPUTime << "," << endl;
 		}
 	}
+	cout << "Total GPU time: " << allModeGPUTime << ", nnz:" << TiledX[0].totNnz 
+		<< ", nFibers:" << TiledX[0].fbrPtr[1].size() << ", nSlc:" << TiledX[0].fbrIdx[0].size()
+		<< endl;
 
-	cout << "Total GPU time: " << allModeGPUTime << endl;
 	for (int bin = 0; bin < Opt.nBin; ++bin)
 		cudaStreamDestroy(streams[bin]);
 	// check correctness
@@ -2212,7 +2212,7 @@ int MTTKRP_MIHCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
     cudaEventCreate(&start);
     cudaEventCreate(&stop);
     cudaStream_t streams[Opt.nBin];
-    float mili = 0, GPUTime = 0, CPUtimer = 0;
+    float mili = 0, GPUTime = 0, CPUtimer = 0, allModeGPUTime = 0;
 
     int smallBinEndsAt = 5;
 
@@ -2256,7 +2256,6 @@ int MTTKRP_MIHCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 
 	/* MTTKRP on mode 0,1,2 using MICSF*/
 	for (int MTTKRPmode = 0; MTTKRPmode <  TiledX[0].ndims; ++MTTKRPmode){
-	// for (int MTTKRPmode = 0; MTTKRPmode <  TiledX[0].ndims; ++MTTKRPmode){
 
 		if(MTTKRPmode > 0){
 
@@ -2690,7 +2689,9 @@ int MTTKRP_MIHCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 			cuda_timer_stop(start, stop, mili);
 		    GPUTime += mili;
 		    
-		    // if(Opt.verbose)
+		    cout << "Tile: " << m << ": " << mili << ",";
+
+		    if(Opt.verbose)
 		    {
 		    	cout << "Tile: " << m << " - time: " << mili << " ms";
 		    	cout <<" nnz: " << TiledX[m].totNnz << " nFibers: "
@@ -2700,9 +2701,21 @@ int MTTKRP_MIHCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 				cout << endl;
 			}   
 		}
-		cout << endl;
-		// cout << "MI-HCSR on mode "<< MTTKRPmode <<" GPU: " << GPUTime << "," << endl;
+		cout << "MI-HCSR-GPU-mode "<< MTTKRPmode <<" : " << GPUTime << "," << endl;
+		allModeGPUTime += GPUTime; 
 	}
+	int totalMIslics = 0, totalMIfibers = 0, totalMInnz = 0;;
+	for (int m = 0; m <  TiledX[0].ndims; ++m){
+		if(TiledX[m].totNnz){
+			totalMIslics += TiledX[m].fbrIdx[0].size();
+			totalMIfibers += TiledX[m].fbrPtr[1].size();
+			totalMInnz += TiledX[m].totNnz;
+		}
+	}
+
+	cout << "Total GPU time: " << allModeGPUTime << ", nnz:" << totalMInnz 
+			<< ", nFibers:" << totalMIfibers << ", nSlc:" << totalMIslics 
+			<< endl;
 
 	for (int bin = 0; bin < Opt.nBin; ++bin)
 		cudaStreamDestroy(streams[bin]);

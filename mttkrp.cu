@@ -57,30 +57,7 @@ int main(int argc, char* argv[]){
 
         double t0 = seconds();        
         ((X.ndims == 3) ?  MTTKRP_HCSR_CPU(X, TiledX, U, Opt) :  MTTKRP_HCSR_CPU_4D(X, U, Opt)); 
-        printf("gcc no opt : HCSR CPU - time: %.3f sec \n", seconds() - t0); 
-
-        /*MTTKRP on mode 0, 1 and 2 using same HCSR sorted as 0-1-2*/
-
-        // int mode = 0;
-        // cout << "Performing mode " << curMode[mode] << endl;
-        
-        // ((X.ndims == 3) ?  MTTKRP_HCSR_CPU(X, TiledX, U, Opt) :  MTTKRP_HCSR_CPU_4D(X, U, Opt));  
-     
-        // mode = 1;
-        // cout << "Performing mode " << curMode[mode] << endl;
-        // randomize_mats(X, U, Opt);
-        // zero_mat(X, U, curMode[mode]); 
-        // MTTKRP_HCSR_CPU_mode1(X, U, Opt, curMode[mode]); 
-        // // write_output(U, curMode[mode], "tmp1"); 
-
-        // mode = 2;
-        // cout << "Performing mode " << curMode[mode] << endl;
-        // randomize_mats(X, U, Opt);
-        // zero_mat(X, U, curMode[mode]); 
-        // MTTKRP_HCSR_CPU_mode2(X, TiledX, U, Opt, curMode[mode]);
-        // // write_output(U, curMode[mode], "tmp2");  
-        
-       
+        printf("gcc no opt : HCSR CPU - time: %.3f sec \n", seconds() - t0);        
     }
 
     // COO GPU  
@@ -181,10 +158,9 @@ int main(int argc, char* argv[]){
     }
 
      /* single-CSF*/
-
     else if(Opt.impType == 13 || Opt.impType == 14 ){
 
-        // if(Opt.verbose)
+        if(Opt.verbose)
             cout << "Starting sameCSF: MTTKRP on all modes using same CSF" << endl;
         sort_COOtensor(X);
 
@@ -251,18 +227,39 @@ int main(int argc, char* argv[]){
         }
     }
 
-
     /* MI-CSF*/
-
     else if(Opt.impType == 11 || Opt.impType == 12){
+
+        double t0 = seconds();
 
         if(Opt.verbose)
             cout << "Starting MI-CSF" << endl;
-        sort_COOtensor(X);
-        // print_COOtensor(X);
+
+        /*Collect slice and fiber stats: Create CSF for all modes*/
+        bool slcNfbrStats = true;
+
+        Tensor *arrX = new Tensor[X.ndims]; 
+
+        if(slcNfbrStats){
+
+            for (int m = 0; m < X.ndims; ++m){
+                // cout << "Init CSF" << m << endl;
+            
+                init_tensor(arrX, X, m);
+                 // cout << "Sorting CSF" << m << endl;
+                if(m!= Opt.mode) //already sorted
+                    sort_COOtensor(arrX[m]);
+                // get_tensorStats(arrX[m]);
+                  // cout << "Create CSF" << m << endl;
+                create_HCSR(arrX[m], Opt); 
+                // print_HCSRtensor(arrX[m]);
+            }       
+        }
+
         TiledTensor ModeWiseTiledX[X.ndims];
-        find_hvyslc_allMode(X, ModeWiseTiledX, Opt);
-        
+        // cout << "Start find hcy slice..." << endl;
+        find_hvyslc_allMode(arrX, X, ModeWiseTiledX, Opt);
+        // cout << "Start processing MICSF..." << endl;
         for (int m = 0; m < X.ndims; ++m){
             
             if(ModeWiseTiledX[m].totNnz > 0){           
@@ -309,6 +306,7 @@ int main(int argc, char* argv[]){
             MTTKRP_MIHCSR_GPU(ModeWiseTiledX, U, Opt);
 
         }
+        // printf("MIHCSR incl CPU - time: %.3f sec \n", seconds() - t0);
     }
 
     else // e.g. -1 
@@ -325,14 +323,14 @@ int main(int argc, char* argv[]){
         }
         if(Opt.verbose && Opt.impType == 12)
             cout << "checking only the last mode" << endl;
-        Opt.mode = 2;//X.modeOrder[2];
+        Opt.mode = X.modeOrder[2];
         // Opt.mode = 1;//((Opt.impType == 12) ? 2 : Opt.mode);
         int mode = Opt.mode;
         int nr = U[mode].nRows;  
         int nc = U[mode].nCols;
         DTYPE *out = (DTYPE*)malloc(nr * nc * sizeof(DTYPE));
         memcpy(out, U[mode].vals, nr*nc * sizeof(DTYPE));
-        // print_matrix(U, mode);
+        print_matrix(U, mode);
 
         // cout << "change double, mode sort, exec file" << endl; 
 
@@ -341,7 +339,7 @@ int main(int argc, char* argv[]){
 
         cout << "correctness with COO on mode " << mode << endl;
         ((X.ndims == 3) ?  MTTKRP_COO_CPU(X, U, Opt) :  MTTKRP_COO_CPU_4D(X, U, Opt));
-        // print_matrix(U, mode);
+        print_matrix(U, mode);
         correctness_check(out, U[mode].vals, nr, nc);
 
     }
