@@ -88,7 +88,7 @@ int main(int argc, char* argv[]){
 
     /* Tiled versions */
     else if(Opt.impType >= 5 && Opt.impType < 10){
-        
+
         create_HCSR(X, Opt);
 
         int tilingMode = X.modeOrder[X.ndims -1];
@@ -112,8 +112,9 @@ int main(int argc, char* argv[]){
         // create HCSR for each tile
         for (int tile = 0; tile < Opt.nTile; ++tile){
 
-            if(TiledX[tile].totNnz > 0)
+            if(TiledX[tile].totNnz > 0){
                 create_TiledHCSR(TiledX, Opt, tile);
+            }
             // print_TiledHCSRtensor(TiledX, tile);
         }  
 
@@ -147,7 +148,7 @@ int main(int argc, char* argv[]){
         else if(Opt.impType == 8){
              cout << "Sorted mode: " << X.modeOrder[0] << " " << X.modeOrder[1] << " " <<X.modeOrder[2] << endl;
 
-            MTTKRP_TILED_HCSR_GPU(TiledX, U, Opt);
+            // MTTKRP_TILED_HCSR_GPU(TiledX, U, Opt);
         }
 
 
@@ -243,32 +244,48 @@ int main(int argc, char* argv[]){
         if(slcNfbrStats){
 
             for (int m = 0; m < X.ndims; ++m){
-                // cout << "Init CSF" << m << endl;
             
                 init_tensor(arrX, X, m);
-                 // cout << "Sorting CSF" << m << endl;
-                if(m!= Opt.mode) //already sorted
+                // if(m!= Opt.mode) //already sorted
+                 t0 = seconds();
                     sort_COOtensor(arrX[m]);
-                // get_tensorStats(arrX[m]);
-                  // cout << "Create CSF" << m << endl;
+                     printf("sort - mode %d - %.3f\n", m, seconds() - t0);
+                t0 = seconds();
                 create_HCSR(arrX[m], Opt); 
+                printf("creat CSF - mode %d - %.3f\n", m, seconds() - t0);
+                get_nnzPerFiberData(arrX[m]); //merge with createCSF
+                create_hashtable(arrX[m]);
+                cout << "created Hshtable" << endl;
                 // print_HCSRtensor(arrX[m]);
             }       
         }
 
         TiledTensor ModeWiseTiledX[X.ndims];
-        // cout << "Start find hcy slice..." << endl;
+        t0 = seconds();
         find_hvyslc_allMode(arrX, X, ModeWiseTiledX, Opt);
-        // cout << "Start processing MICSF..." << endl;
-        for (int m = 0; m < X.ndims; ++m){
-            
-            if(ModeWiseTiledX[m].totNnz > 0){           
-                sort_MI_CSF(X, ModeWiseTiledX, m);
-                create_TiledHCSR(ModeWiseTiledX, Opt, m);
-                create_fbrLikeSlcInds(ModeWiseTiledX, m);
-                make_TiledBin(ModeWiseTiledX, Opt, m);
+        printf("findHvySlice - time: %.3f sec \n", seconds() - t0);
+        
+        t0 = seconds();
+        double start_time = omp_get_wtime();
+        omp_set_num_threads(X.ndims);
+        #pragma omp parallel 
+        {
+            int threadnum = omp_get_thread_num(), numthreads = omp_get_num_threads();
+            #pragma omp for 
+            for (int m = 0; m < X.ndims; ++m){
+                
+                if(ModeWiseTiledX[m].totNnz > 0){           
+                    sort_MI_CSF(X, ModeWiseTiledX, m);
+                    create_TiledHCSR(ModeWiseTiledX, Opt, m);
+                    create_fbrLikeSlcInds(ModeWiseTiledX, m);
+                    make_TiledBin(ModeWiseTiledX, Opt, m);
+                }
+                cout << threadnum << " " << numthreads << endl;
             }
         }
+        double omp_time = omp_get_wtime() - start_time;
+
+        printf("Sort,createCSF,createFbrIND - time: %.3f sec, %g \n", seconds() - t0, omp_time);
 
         /* on CPU */
         if(Opt.impType == 11){ 
@@ -302,6 +319,7 @@ int main(int argc, char* argv[]){
         
         /* on GPU */
         else if(Opt.impType == 12){ 
+            cout <<"OFF!" <<endl;
 
             MTTKRP_MIHCSR_GPU(ModeWiseTiledX, U, Opt);
 
@@ -323,8 +341,8 @@ int main(int argc, char* argv[]){
         }
         if(Opt.verbose && Opt.impType == 12)
             cout << "checking only the last mode" << endl;
-        Opt.mode = X.modeOrder[2];
-        // Opt.mode = 1;//((Opt.impType == 12) ? 2 : Opt.mode);
+        // Opt.mode = X.modeOrder[2];
+        Opt.mode = 2;//((Opt.impType == 12) ? 2 : Opt.mode);
         int mode = Opt.mode;
         int nr = U[mode].nRows;  
         int nc = U[mode].nCols;
