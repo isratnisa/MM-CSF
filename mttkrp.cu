@@ -246,16 +246,18 @@ int main(int argc, char* argv[]){
             for (int m = 0; m < X.ndims; ++m){
             
                 init_tensor(arrX, X, m);
-                // if(m!= Opt.mode) //already sorted
-                 t0 = seconds();
+                if(m!= Opt.mode) //already sorted
+                    t0 = seconds();
                     sort_COOtensor(arrX[m]);
-                     printf("sort - mode %d - %.3f\n", m, seconds() - t0);
+                    printf("sort - mode %d - %.3f\n", m, seconds() - t0);
+                
                 t0 = seconds();
                 create_HCSR(arrX[m], Opt); 
                 printf("creat CSF - mode %d - %.3f\n", m, seconds() - t0);
-                get_nnzPerFiberData(arrX[m]); //merge with createCSF
-                create_hashtable(arrX[m]);
-                cout << "created Hshtable" << endl;
+                
+                // get_nnzPerFiberData(arrX[m]); //merge with createCSF
+                // create_hashtable(arrX[m]);
+                // cout << "created Hshtable" << endl;
                 // print_HCSRtensor(arrX[m]);
             }       
         }
@@ -263,7 +265,8 @@ int main(int argc, char* argv[]){
         TiledTensor ModeWiseTiledX[X.ndims];
         t0 = seconds();
         find_hvyslc_allMode(arrX, X, ModeWiseTiledX, Opt);
-        printf("findHvySlice - time: %.3f sec \n", seconds() - t0);
+        // populate_paritions(X, ModeWiseTiledX);
+        printf("findHvySlice& populate - time: %.3f sec \n", seconds() - t0);
         
         t0 = seconds();
         double start_time = omp_get_wtime();
