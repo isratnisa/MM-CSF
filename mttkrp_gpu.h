@@ -1526,6 +1526,7 @@ int MTTKRP_TILED_HCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 	if(Opt.impType == 14){
 		
 		/*next mode*/
+
 		MTTKRPmode = mode1;//(1 + Opt.mode) % TiledX[0].ndims;
 
 		if(performMTTKRPnMode){
@@ -1556,7 +1557,7 @@ int MTTKRP_TILED_HCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 				}
 				// cout <<"might wanna change binning style and Block size, logWPC, COO like parallelism, allow mode sort" << endl;
 
-				BLOCKSIZE = 512;//Opt.TBsize;
+				BLOCKSIZE = 128;//Opt.TBsize;
 				dim3 block(BLOCKSIZE, 1, 1), grid(1, 1, 1);
 
 				int smallBinEndsAt = 5;
@@ -1586,34 +1587,6 @@ int MTTKRP_TILED_HCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 					mttkrp_MIHCSR_kernel_fbr_atomic_fbrLvlPar<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dFbrLikeSlcInds + dFbrLoc, 
 				dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[tile].nFibers, 
 				dU1, dU2, dU0, Opt.mode, Opt.R, warpPerFbr, logOfWarpPerFbr);
-		
-				// for (int bin = 0; bin < Opt.nBin ; ++bin){
-
-				// 	if(bin < smallBinEndsAt){
-
-				// 		dBinLoc += ((bin > 0) ? TiledX[tile].slcMapperBin[bin-1].size() : 0);
-
-				// 		grid.x = ( TbPerSlc[bin] * warpPerSlc[bin] * 32 * TiledX[tile].slcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
-
-				// 		if(TiledX[0].ndims == 3)
-				// 			mttkrp_MIHCSR_kernel_smllBin_fbr_atomic<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
-				// 			dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[tile].slcMapperBin[bin].size(), 
-				// 			dU1, dU2, dU0, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin], TbPerSlc[bin], logOfTbPerSlc[bin]); 
-				// 	}
-					
-				// 	// Processing heavy bin.. multiple TB per slice
-				// 	else{
-
-				// 		dBinLoc += TiledX[tile].slcMapperBin[bin-1].size();
-								
-				// 		grid.x = (TbPerSlc[bin] * warpPerSlc[bin] * 32 * TiledX[tile].slcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
-								
-				// 		if(TiledX[0].ndims == 3)
-				// 			mttkrp_MIHCSR_kernel_hvyBin_fbr_atomic<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
-				// 			dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[tile].slcMapperBin[bin].size(), 
-				// 			dU1, dU2, dU0, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin],  TbPerSlc[bin], logOfTbPerSlc[bin]); 
-				// 	}
-				// }
 
 				cuda_timer_stop(start, stop, mili);
 			    CPUtimer += seconds() - t0;
@@ -1699,33 +1672,6 @@ int MTTKRP_TILED_HCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 				dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[tile].nFibers, 
 				dU2, dU0, dU1, Opt.mode, Opt.R, warpPerFbr, logOfWarpPerFbr); 
 				
-				// for (int bin = 0; bin < Opt.nBin ; ++bin){
-
-				// 	if(bin < smallBinEndsAt){
-
-				// 		dBinLoc += ((bin > 0) ? TiledX[tile].slcMapperBin[bin-1].size() : 0);
-
-				// 		grid.x = ( TbPerSlc[bin] * warpPerSlc[bin] * 32 * TiledX[tile].slcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
-
-				// 		if(TiledX[0].ndims == 3)
-				// 			mttkrp_MIHCSR_kernel_smllBin_all_atomic<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
-				// 			dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[tile].slcMapperBin[bin].size(), 
-				// 			dU2, dU0, dU1, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin], TbPerSlc[bin], logOfTbPerSlc[bin]); 
-				// 	}
-					
-				// 	// Processing heavy bin.. multiple TB per slice
-				// 	else{
-
-				// 		dBinLoc += TiledX[tile].slcMapperBin[bin-1].size();
-								
-				// 		grid.x = (TbPerSlc[bin] * warpPerSlc[bin] * 32 * TiledX[tile].slcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
-								
-				// 		if(TiledX[0].ndims == 3)
-				// 			mttkrp_MIHCSR_kernel_hvyBin_all_atomic<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
-				// 			dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[tile].slcMapperBin[bin].size(), 
-				// 			dU2, dU0, dU1, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin],  TbPerSlc[bin], logOfTbPerSlc[bin]); 
-				// 	}
-				// }
 				cuda_timer_stop(start, stop, mili);
 			    CPUtimer += seconds() - t0;
 			    GPUTime += mili;
