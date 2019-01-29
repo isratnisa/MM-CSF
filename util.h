@@ -1515,8 +1515,13 @@ inline int binarySearch(ITYPE *arr, ITYPE l, ITYPE r, ITYPE x) {
     } 
     return -1; 
 }
-inline int find_hvyslc_allMode(Tensor *arrX, const Tensor &X, TiledTensor *MTX, Options & Opt){
+inline int find_hvyslc_allMode(Tensor *arrX, Tensor &X, TiledTensor *MTX, Options & Opt){
  
+    X.partPerNnz = new ITYPE[X.totNnz];
+    memset(X.partPerNnz, 0, X.totNnz * sizeof(ITYPE));  
+    X.totnnzPerPart = new ITYPE[X.ndims];
+    memset(X.totnnzPerPart, 0, X.ndims * sizeof(ITYPE));  
+
     for (int m = 0; m < arrX[0].ndims; ++m){
         
         int sliceMode=arrX[m].modeOrder[0];
@@ -1535,6 +1540,9 @@ inline int find_hvyslc_allMode(Tensor *arrX, const Tensor &X, TiledTensor *MTX, 
     /*creating dense slices so that nnz can directly index slices unlike fiber. For
     fiber it needs to scan all fibers in a slice. */
 
+    #pragma omp parallel 
+    {
+    #pragma omp for 
     for (int m = 0; m < arrX[0].ndims; ++m){
 
         for(ITYPE slc = 0; slc < arrX[m].fbrIdx[0].size(); ++slc) {
@@ -1546,7 +1554,7 @@ inline int find_hvyslc_allMode(Tensor *arrX, const Tensor &X, TiledTensor *MTX, 
             else
                 arrX[m].denseSlcPtr[arrX[m].fbrIdx[0][slc]+1] = arrX[m].fbrPtr[0][slc+1];
         }
-        
+    }    
     }
 
     // Populate nnz per fiber and nnz per slice 
@@ -1555,7 +1563,9 @@ inline int find_hvyslc_allMode(Tensor *arrX, const Tensor &X, TiledTensor *MTX, 
         /*dont need vals or last ids*/
         arrX[m].vals.resize(0);
         arrX[m].inds[X.modeOrder[2]].resize(0);
-
+        #pragma omp parallel 
+        {
+        #pragma omp for 
         for(ITYPE slc = 0; slc < arrX[m].fbrIdx[0].size(); ++slc) {
 
             for (int fbr = arrX[m].fbrPtr[0][slc]; fbr < arrX[m].fbrPtr[0][slc+1]; ++fbr){      
@@ -1563,6 +1573,7 @@ inline int find_hvyslc_allMode(Tensor *arrX, const Tensor &X, TiledTensor *MTX, 
                 arrX[m].nnzPerFiber[fbr] = arrX[m].fbrPtr[1][fbr+1] - arrX[m].fbrPtr[1][fbr];
                 arrX[m].nnzPerSlice[arrX[m].fbrIdx[0][slc]] += arrX[m].nnzPerFiber[fbr];
             }
+        }
         }
     }
 
@@ -1638,13 +1649,12 @@ inline int find_hvyslc_allMode(Tensor *arrX, const Tensor &X, TiledTensor *MTX, 
     ITYPE mode1 = 1;//X.modeOrder[1];
     ITYPE mode2 = 2;//X.modeOrder[2];
 
-    int *fbrNnz = new int[X.ndims];
-    int *fbrNo = new int[X.ndims];
-    int *fbrSt = new int[X.ndims];
-    int *curIdx = new int[X.ndims];
-    int *sliceNnnz =  new int[X.ndims];
-    std::vector<ITYPE> leftOvers;
-    int tmpSlc;
+    // int *fbrNnz = new int[X.ndims];
+    // int *fbrNo = new int[X.ndims];
+    // int *fbrSt = new int[X.ndims];
+    // int *curIdx = new int[X.ndims];
+    // int *sliceNnnz =  new int[X.ndims];
+    // int tmpSlc;
 
     bool sameFm0m1 = false, sameFm0m2 = false, sameFm1m2 = false;
     int fbTh =  Opt.MIfbTh;
@@ -1666,7 +1676,17 @@ inline int find_hvyslc_allMode(Tensor *arrX, const Tensor &X, TiledTensor *MTX, 
     }
     bool casePr = false;
 
-    // /* Process NNZs*/
+        /******** Process NNZ********s*/
+    #pragma omp parallel 
+    {
+
+    ITYPE *fbrNnz = new ITYPE[X.ndims];
+    ITYPE *fbrNo = new ITYPE[X.ndims];
+    ITYPE *curIdx = new ITYPE[X.ndims];
+    ITYPE *sliceNnnz =  new ITYPE[X.ndims];
+    ITYPE tmpSlc;
+
+    #pragma omp for 
     for (int idx = 0; idx < X.totNnz; ++idx){
         
         bool modeDone = false;
@@ -1834,19 +1854,22 @@ inline int find_hvyslc_allMode(Tensor *arrX, const Tensor &X, TiledTensor *MTX, 
     
         /*populate new partitions*/
         if(mode > -1){
-            for (int i = 0; i < X.ndims; ++i)  {
-                MTX[mode].inds[i].push_back(X.inds[i][idx]); 
-            }
-            MTX[mode].vals.push_back(X.vals[idx]); 
-            MTX[mode].totNnz = MTX[mode].vals.size();
+            X.partPerNnz[idx] = mode;
+            // X.totnnzPerPart[mode]++;
+            // for (int i = 0; i < X.ndims; ++i)  
+            //     MTX[mode].inds[i].push_back(X.inds[i][idx]); 
+            
+            // MTX[mode].vals.push_back(X.vals[idx]); 
+            // MTX[mode].totNnz = MTX[mode].vals.size();
         }
         if(casePr) 
             cout << "selected mode: " << mode << endl;
 
     }
+    }
 
-    for (int m = 0; m < X.ndims; ++m)
-        MTX[m].totNnz = MTX[m].vals.size();
+    // for (int m = 0; m < X.ndims; ++m)
+    //     MTX[m].totNnz = MTX[m].vals.size();
 }
 
 /* param: MTX - mode wise tiled X */

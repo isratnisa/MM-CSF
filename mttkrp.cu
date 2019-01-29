@@ -265,7 +265,7 @@ int main(int argc, char* argv[]){
         TiledTensor ModeWiseTiledX[X.ndims];
         t0 = seconds();
         find_hvyslc_allMode(arrX, X, ModeWiseTiledX, Opt);
-        // populate_paritions(X, ModeWiseTiledX);
+        populate_paritions(X, ModeWiseTiledX);
         printf("findHvySlice& populate - time: %.3f sec \n", seconds() - t0);
         
         t0 = seconds();
