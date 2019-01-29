@@ -146,11 +146,10 @@ int main(int argc, char* argv[]){
 
         // TILED HCSR GPU
         else if(Opt.impType == 8){
-             cout << "Sorted mode: " << X.modeOrder[0] << " " << X.modeOrder[1] << " " <<X.modeOrder[2] << endl;
+            cout << "Sorted mode: " << X.modeOrder[0] << " " << X.modeOrder[1] << " " <<X.modeOrder[2] << endl;
 
-            // MTTKRP_TILED_HCSR_GPU(TiledX, U, Opt);
+            MTTKRP_TILED_HCSR_GPU(TiledX, U, Opt);
         }
-
 
         // TILED + shared HCSR GPU
         else if(Opt.impType == 9){
@@ -277,8 +276,9 @@ int main(int argc, char* argv[]){
             #pragma omp for 
             for (int m = 0; m < X.ndims; ++m){
                 
-                if(ModeWiseTiledX[m].totNnz > 0){           
-                    sort_MI_CSF(X, ModeWiseTiledX, m);
+                if(ModeWiseTiledX[m].totNnz > 0){ 
+                    if(m!=Opt.mode)          
+                        sort_MI_CSF(X, ModeWiseTiledX, m);
                     create_TiledHCSR(ModeWiseTiledX, Opt, m);
                     create_fbrLikeSlcInds(ModeWiseTiledX, m);
                     make_TiledBin(ModeWiseTiledX, Opt, m);
@@ -322,7 +322,6 @@ int main(int argc, char* argv[]){
         
         /* on GPU */
         else if(Opt.impType == 12){ 
-            cout <<"OFF!" <<endl;
 
             MTTKRP_MIHCSR_GPU(ModeWiseTiledX, U, Opt);
 
