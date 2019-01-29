@@ -1528,8 +1528,8 @@ inline int find_hvyslc_allMode(Tensor *arrX, const Tensor &X, TiledTensor *MTX, 
         arrX[m].nnzPerSlice = new ITYPE[arrX[m].dims[sliceMode]];
         memset(arrX[m].nnzPerSlice, 0, arrX[m].dims[sliceMode] * sizeof(ITYPE));  
 
-        arrX[m].denseSlcPtr = new ITYPE[arrX[m].dims[sliceMode]];
-        memset(arrX[m].denseSlcPtr, 0, arrX[m].dims[sliceMode] * sizeof(ITYPE));  
+        arrX[m].denseSlcPtr = (ITYPE*)malloc( (arrX[m].dims[sliceMode]+1) * sizeof(ITYPE)); //new ITYPE[arrX[m].dims[sliceMode]];
+        memset(arrX[m].denseSlcPtr, 0, (arrX[m].dims[sliceMode] + 1 ) * sizeof(ITYPE));  
     }
 
     /*creating dense slices so that nnz can directly index slices unlike fiber. For
@@ -1537,9 +1537,16 @@ inline int find_hvyslc_allMode(Tensor *arrX, const Tensor &X, TiledTensor *MTX, 
 
     for (int m = 0; m < arrX[0].ndims; ++m){
 
-        for(ITYPE slc = 0; slc < arrX[m].fbrIdx[0].size(); ++slc) 
+        for(ITYPE slc = 0; slc < arrX[m].fbrIdx[0].size(); ++slc) {
 
             arrX[m].denseSlcPtr[arrX[m].fbrIdx[0][slc]] = arrX[m].fbrPtr[0][slc];
+                   
+            if(slc == arrX[m].fbrIdx[0].size()-1)
+                arrX[m].denseSlcPtr[arrX[m].fbrIdx[0][slc]+1] = arrX[m].fbrPtr[0][slc];
+            else
+                arrX[m].denseSlcPtr[arrX[m].fbrIdx[0][slc]+1] = arrX[m].fbrPtr[0][slc+1];
+        }
+        
     }
 
     // Populate nnz per fiber and nnz per slice 
@@ -1664,10 +1671,10 @@ inline int find_hvyslc_allMode(Tensor *arrX, const Tensor &X, TiledTensor *MTX, 
         
         bool modeDone = false;
 
-        // if((idx > 1000000 && idx < 1000005) || (idx > 2000000 && idx < 2000005) || (idx > 5000000 && idx < 5000005) ) 
+        // if(idx%1000000 == 0 && idx < 10000000 ) 
         //     casePr = true;
         // else
-        //     casePr = false;
+        //      casePr = false;
    
         for (int m = 0; m < X.ndims; ++m)
             curIdx[m] = X.inds[m][idx];
@@ -1680,39 +1687,41 @@ inline int find_hvyslc_allMode(Tensor *arrX, const Tensor &X, TiledTensor *MTX, 
             if((m == 1 && sameFm0m1) || (m == 2 && sameFm1m2)){
                 fbrNnz[m] = fbrNnz[m - 1];
                 fbrNo[m] = 99999;//curIdx[arrX[m].modeOrder[1]];
-                fbrSt[m] = 99999;
             }
             else if(m == 2 && sameFm0m2){
                 fbrNnz[m] = fbrNnz[m - 2];
                 fbrNo[m] = 99999;//curIdx[arrX[m].modeOrder[1]];
-                fbrSt[m] = 99999;
             }
             else{
+                ITYPE result, tmp, tmpCounter = 0;
+                ITYPE idx_j = curIdx[arrX[m].modeOrder[1]];
                 tmpSlc = curIdx[m];
 
-                /*code for binary search*/
-                {
-                    // ITYPE n =  arrX[m].fbrPtr[0][tmpSlc+1] - arrX[m].fbrPtr[0][tmpSlc];//sizeof(arr) / sizeof(arr[0]); 
-                    // ITYPE x = curIdx[arrX[m].modeOrder[1]]; 
-                    // int fbr = arrX[m].fbrPtr[0][tmpSlc];               
-                    // ITYPE result = binarySearch(&(arrX[m].fbrIdx[1][fbr]), 0, n, x); 
-                    // fbrNnz[m] = arrX[m].nnzPerFiber[result+fbr];
-                    // fbrNo[m] = curIdx[arrX[m].modeOrder[1]];
-                    // fbrSt[m] = fbr + result;
-                    // // (result == -1) ? printf("Element is not present in array\n") 
-                    //    : printf("Element is present at index %d\n", result); 
-                }
-                // for (int fbr = arrX[m].fbrPtr[0][tmpSlc]; fbr < arrX[m].fbrPtr[0][tmpSlc+1]; ++fbr){ 
-                for (int fbr = arrX[m].denseSlcPtr[tmpSlc]; fbr < arrX[m].denseSlcPtr[tmpSlc+1]; ++fbr){  
+                /*linear search*/
 
-                    if(arrX[m].fbrIdx[1][fbr] == curIdx[arrX[m].modeOrder[1]]){
-                        fbrNnz[m] = arrX[m].nnzPerFiber[fbr];
-                        fbrNo[m] = curIdx[arrX[m].modeOrder[1]];
-                        fbrSt[m] = fbr;
-                        break;
-                    }
+                // for (int fbr = arrX[m].denseSlcPtr[tmpSlc]; fbr < arrX[m].denseSlcPtr[tmpSlc+1]; ++fbr){  
+
+                //     if(arrX[m].fbrIdx[1][fbr] == idx_j){
+                //         fbrNnz[m] = arrX[m].nnzPerFiber[fbr];
+                //         fbrNo[m] = curIdx[arrX[m].modeOrder[1]];
+                //         fbrSt[m] = fbr;
+                //         break;
+                //     }
+                // }
+                /*binary search*/
+                {
+                    int n =  arrX[m].denseSlcPtr[tmpSlc+1] - arrX[m].denseSlcPtr[tmpSlc];//sizeof(arr) / sizeof(arr[0]); 
+                    ITYPE fbr = arrX[m].denseSlcPtr[tmpSlc];  
+                    result = binarySearch1(&(arrX[m].fbrIdx[1][fbr]), 0, n, idx_j); 
+                    tmp = arrX[m].nnzPerFiber[result+fbr];
+                    fbrNnz[m] = tmp;
                 }
-                // cout << "from binary seach " << arrX[m].nnzPerFiber[result+fbr1] <<" org " << fbrNnz[m] << endl;
+
+                // if(idx%1000000 == 0 && idx < 10000000){
+                //     cout << m<<" mm " << arrX[m].fbrPtr[0][tmpSlc]<<"," << arrX[m].denseSlcPtr[tmpSlc]
+                //     <<" " <<arrX[m].fbrPtr[0][tmpSlc+1]<<"," << arrX[m].denseSlcPtr[tmpSlc+1]
+                //     <<" from linear search " << fbrNnz[m]  <<" binary " << tmp << endl; //<<" hash"  << check
+                // }
             }
         }
         if(casePr) {
@@ -1831,26 +1840,13 @@ inline int find_hvyslc_allMode(Tensor *arrX, const Tensor &X, TiledTensor *MTX, 
             MTX[mode].vals.push_back(X.vals[idx]); 
             MTX[mode].totNnz = MTX[mode].vals.size();
         }
-        if(casePr ) 
+        if(casePr) 
             cout << "selected mode: " << mode << endl;
 
-
-        //add some weight..so same fiber gets picked again.
-
-        // arrX[mode].nnzPerFiber[fbrSt[mode]]+=10;
     }
 
-    // cout << "singleSliceFromAllMode " << singleSliceFromAllMode << endl;
-    // cout << "Threshold: "<< threshold << endl ;
-    // cout << "nnz in CSFs: ";
-    for (int m = 0; m < X.ndims; ++m){
+    for (int m = 0; m < X.ndims; ++m)
         MTX[m].totNnz = MTX[m].vals.size();
-        // cout << m << ": " << MTX[m].totNnz << " ";
-        // cout << m << "new active dims: " <<totalActvDim[m][0] << " "
-        // << totalActvDim[m][1] << " " << totalActvDim[m][2] << endl;;
-
-    }
-    // cout << endl;
 }
 
 /* param: MTX - mode wise tiled X */
