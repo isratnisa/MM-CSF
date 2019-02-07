@@ -1,0 +1,39 @@
+==195244== NVPROF is profiling process 195244, command: /users/PAS0134/osu1600/Tensor/SpMTTKRP_private/mttkrp -i /users/PAS0134/osu1600/Tensor/dataset/dense_syn_tns/dense_50_500_5000.tns -m 0 -R 32 -t 14
+Sorted mode: 0 1 2
+==195244== Some kernel(s) will be replayed on device 0 in order to collect all events/metrics.
+singleCSF-GPU-mode 0 :998.924,
+singleCSF-GPU-mode 1 :914.825,
+singleCSF-GPU-mode 2 :1486.57,
+Total GPU time: 3400.32, nnz:125000000, nFibers:25001, nSlc:50
+==195244== Profiling application: /users/PAS0134/osu1600/Tensor/SpMTTKRP_private/mttkrp -i /users/PAS0134/osu1600/Tensor/dataset/dense_syn_tns/dense_50_500_5000.tns -m 0 -R 32 -t 14
+==195244== Profiling result:
+==195244== Metric result:
+Invocations                               Metric Name                            Metric Description         Min         Max         Avg
+Device "Tesla P100-PCIE-16GB (0)"
+    Kernel: mttkrp_MIHCSR_kernel_all_atomic_fbrLvlPar(float*, unsigned long*, unsigned long*, unsigned long*, unsigned long*, unsigned long*, unsigned int, float*, float*, float*, unsigned long, unsigned long, unsigned long, int)
+          1                             flop_count_sp   Floating Point Operations(Single Precision)  4000800000  4000800000  4000800000
+          1                       atomic_transactions                           Atomic Transactions   500000000   500000000   500000000
+          1                      l2_tex_read_hit_rate                   L2 Hit Rate (Texture Reads)       9.44%       9.44%       9.44%
+          1                     l2_tex_write_hit_rate                  L2 Hit Rate (Texture Writes)       0.00%       0.00%       0.00%
+          1                    dram_read_transactions               Device Memory Read Transactions    47553153    47553153    47553153
+          1                   dram_write_transactions              Device Memory Write Transactions      607074      607074      607074
+          1                             sm_efficiency                       Multiprocessor Activity      96.91%      96.91%      96.91%
+          1                        achieved_occupancy                            Achieved Occupancy    0.993601    0.993601    0.993601
+    Kernel: mttkrp_HCSR_kernel_hvyBin(float*, unsigned long*, unsigned long*, unsigned long*, unsigned long*, unsigned long*, unsigned long*, unsigned int, float*, float*, float*, unsigned long, unsigned long, unsigned long, int, int, int)
+          1                             flop_count_sp   Floating Point Operations(Single Precision)  8001600000  8001600000  8001600000
+          1                       atomic_transactions                           Atomic Transactions      102400      102400      102400
+          1                      l2_tex_read_hit_rate                   L2 Hit Rate (Texture Reads)      90.96%      90.96%      90.96%
+          1                     l2_tex_write_hit_rate                  L2 Hit Rate (Texture Writes)       0.00%       0.00%       0.00%
+          1                    dram_read_transactions               Device Memory Read Transactions    47221157    47221157    47221157
+          1                   dram_write_transactions              Device Memory Write Transactions       60799       60799       60799
+          1                             sm_efficiency                       Multiprocessor Activity      97.39%      97.39%      97.39%
+          1                        achieved_occupancy                            Achieved Occupancy    0.906479    0.906479    0.906479
+    Kernel: mttkrp_MIHCSR_kernel_fbr_atomic_fbrLvlPar(float*, unsigned long*, unsigned long*, unsigned long*, unsigned long*, unsigned long*, unsigned int, float*, float*, float*, unsigned long, unsigned long, unsigned long, int)
+          1                             flop_count_sp   Floating Point Operations(Single Precision)  8000800000  8000800000  8000800000
+          1                       atomic_transactions                           Atomic Transactions      100000      100000      100000
+          1                      l2_tex_read_hit_rate                   L2 Hit Rate (Texture Reads)      90.60%      90.60%      90.60%
+          1                     l2_tex_write_hit_rate                  L2 Hit Rate (Texture Writes)       0.00%       0.00%       0.00%
+          1                    dram_read_transactions               Device Memory Read Transactions    47079854    47079854    47079854
+          1                   dram_write_transactions              Device Memory Write Transactions      109688      109688      109688
+          1                             sm_efficiency                       Multiprocessor Activity      99.44%      99.44%      99.44%
+          1                        achieved_occupancy                            Achieved Occupancy    0.981922    0.981922    0.981922
