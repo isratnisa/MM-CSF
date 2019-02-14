@@ -656,6 +656,63 @@ __global__ void mttkrp_HCSR_kernel_hvyBin_4D(DTYPE * vals, ITYPE *dfbrIdx0, ITYP
 	}
 }
 
+// CUDA fbr atomic sing slcLikeFbr
+__global__ void mttkrp_MIHCSR_kernel_slc_atomic_fbrLvlPar(DTYPE * vals, ITYPE *fbrLikeSlcInds, ITYPE *dInds2, 
+	ITYPE *fbrPtr0, ITYPE *fbrPtr1, ITYPE *fbrIdx1, unsigned int nFibers, DTYPE *dU0, DTYPE * dU1, DTYPE *dU2, 
+	ITYPE	mode, ITYPE R, ITYPE warpPerSlice, int logOfWPC){
+
+	unsigned int tId = threadIdx.x;
+	unsigned int laneId = tId & 31;
+	unsigned int gId = (blockIdx.x * blockDim.x + tId);
+	unsigned int workId = (tId & ((1 << (5 + logOfWPC)) - 1)) >> 5;  //tId >> 5; //tId >> 5;//
+	unsigned int fbr = (gId >> (5 + logOfWPC)) << 2; // 5: minimum 1 WARP (2^5) // blockIdx.x ;//
+	DTYPE tmp = 0, tmp_val;
+		              	              
+	if(fbr < nFibers - 1){ 	    
+		
+		tmp_val = 0;
+		bool diffFiber = false;
+		unsigned int idx0;
+
+		//maybe add another check fbr_fr can be larger than fiber?
+
+		for (int fr = 0; fr < 4 && (fbr+fr) < (nFibers - 1); ++fr){
+
+			diffFiber = false;
+			unsigned int idx1 = fbrIdx1[fbr+fr];// dInds1[fbrPtr1[fbr]];  
+			idx0 = fbrLikeSlcInds[fbr+fr];//slc;  
+ 			tmp_val = 0;
+	        for(unsigned int x = fbrPtr1[fbr+fr] + workId; x < fbrPtr1[fbr+fr+1]; x+=warpPerSlice) {
+
+		        unsigned int idx2 = dInds2[x];                    
+
+	            for(unsigned int r=laneId; r<R; r+=32) {
+	                tmp_val += vals[x] * dU2[idx2 * R + r]; //2MR   
+	            }       
+	        }
+	        	
+        	for(unsigned int r=laneId; r<R; r+=32) { 
+        		tmp += tmp_val * dU1[idx1 * R + r] ;
+        	} 
+	        
+        	if(fbrLikeSlcInds[fbr+fr] != fbrLikeSlcInds[fbr+fr+1]) {
+
+        		diffFiber = true;
+	        	for(unsigned int r=laneId; r<R; r+=32) { 
+	        		atomicAdd(&dU0[idx0 * R + r], tmp); //2PR
+	        	} 
+        		tmp = 0;
+        	}
+        } 
+
+        if(!diffFiber) {  
+	        for(unsigned int r=laneId; r<R; r+=32) { 
+	        	atomicAdd(&dU0[idx0 * R + r], tmp); //2PR
+	        }  
+        }  
+	}
+}
+
 // CUDA kernel call to do HCSR MTTKRP 
 __global__ void mttkrp_MIHCSR_kernel_smllBin_fbr_atomic(DTYPE * vals, ITYPE *dfbrIdx0, ITYPE *dSlcMapperBin, ITYPE *dInds2, ITYPE *fbrPtr0,
 	ITYPE *fbrPtr1, ITYPE *fbrIdx1, unsigned int nSlices, DTYPE *dU0, DTYPE * dU1, DTYPE *dU2, 
@@ -1274,7 +1331,7 @@ int MTTKRP_TILED_COO_GPU(TiledTensor *TiledX, Matrix *U, const Options Opt){
 	return 0;
 }
 
-int MTTKRP_TILED_HCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
+int MTTKRP_B_HCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 	
 	bool performMTTKRPMode = true, performMTTKRPnMode = false, performMTTKRPnnMode = false;
 	
@@ -1697,6 +1754,460 @@ int MTTKRP_TILED_HCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 	if(Opt.impType == 14){
 		MTTKRPmode = mode2;
 		checkCuda(cudaMemcpy(&U[MTTKRPmode].vals[0], dU2, U[MTTKRPmode].nRows * U[MTTKRPmode].nCols * sizeof(DTYPE), cudaMemcpyDeviceToHost), 0);
+	}
+	else
+		checkCuda(cudaMemcpy(&U[mode0].vals[0], dU0, U[mode0].nRows * U[mode0].nCols * sizeof(DTYPE), cudaMemcpyDeviceToHost), 0);
+	cudaFree(dVals); 
+	cudaFree(dU0); cudaFree(dU1); cudaFree(dU2); cudaFree(dU3);
+	cudaFree(dfbrIdx0); cudaFree(dInds2); cudaFree(dInds3); 
+	cudaFree(dfbrIdx0); cudaFree(dfbrIdx1); cudaFree(dFbrIdx2);
+	cudaFree(dfbrPtr0); cudaFree(dfbrPtr1); cudaFree(dFbrPtr2);
+	cudaFree(dFbrLikeSlcInds);
+
+	return 0;
+}
+
+int MTTKRP_ONE_HCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
+	
+	bool performMTTKRPMode = true, performMTTKRPnMode = false, performMTTKRPnnMode = false;
+	
+	if(Opt.impType == 8){
+		performMTTKRPMode = true; performMTTKRPnMode = false; performMTTKRPnnMode = false;
+	}
+	else{
+		performMTTKRPMode = true, performMTTKRPnMode = false, performMTTKRPnnMode = false;
+	}
+
+
+	/* Allocate and memcpy GPU memory */
+	//Tensor
+	ITYPE *dInds2, *dInds3, *dfbrPtr0, *dfbrIdx0, *dfbrPtr1, *dfbrIdx1, *dFbrPtr2, *dFbrIdx2, *dSlcMapperBin, *dFbrLikeSlcInds;
+	DTYPE *dVals;
+	ITYPE dLoc = 0, dSlcLoc = 0, dSlcIdxLoc = 0, dFbrLoc =0,  dFbrIdxLoc =0, dBinLoc = 0, dFbrLoc2 =0;
+	ITYPE totNnz = 0, totSlcPtr = 0, totSlcIdx = 0, totFbrPtr = 0, totFbrIdx = 0, totFbrPtr2 = 0;
+
+	// // All tile same mode
+	ITYPE mode0 = TiledX[0].modeOrder[0];
+    ITYPE mode1 = TiledX[0].modeOrder[1];
+    ITYPE mode2 = TiledX[0].modeOrder[2];
+    ITYPE mode3 =((TiledX[0].ndims == 4) ? TiledX[0].modeOrder[3] : 0) ;
+
+	for (int tile = 0; tile < Opt.nTile; ++tile){
+		totNnz += TiledX[tile].totNnz;
+		totSlcPtr += TiledX[tile].fbrPtr[0].size() ;
+		totSlcIdx += TiledX[tile].fbrIdx[0].size() ;
+		totFbrPtr += TiledX[tile].fbrPtr[1].size() ;
+		totFbrIdx += TiledX[tile].fbrIdx[1].size() ;
+		totFbrPtr2 += ((TiledX[tile].ndims == 4) ? TiledX[tile].fbrPtr[2].size() : 0) ;
+	}
+
+	double t0 = seconds();
+	checkCuda(cudaMalloc((void**) &dVals, totNnz * sizeof(DTYPE)), 0);
+	checkCuda(cudaMalloc((void**) &dfbrPtr0, totSlcPtr * sizeof(ITYPE)), 0);
+	checkCuda(cudaMalloc((void**) &dfbrIdx0, totSlcIdx * sizeof(ITYPE)), 0);
+	checkCuda(cudaMalloc((void**) &dSlcMapperBin, totSlcPtr * sizeof(ITYPE)), 0);
+	checkCuda(cudaMalloc((void**) &dfbrPtr1, totFbrPtr * sizeof(ITYPE)), 0);
+	checkCuda(cudaMalloc((void**) &dfbrIdx1, totFbrIdx * sizeof(ITYPE)), 0);
+	checkCuda(cudaMalloc((void**) &dFbrLikeSlcInds, totFbrIdx * sizeof(ITYPE)), 0);
+
+	if(TiledX[0].ndims == 3)
+		checkCuda(cudaMalloc((void**) &dInds2, totNnz * sizeof(ITYPE)), 0);
+
+	if(TiledX[0].ndims == 4){
+		checkCuda(cudaMalloc((void**) &dFbrIdx2, totFbrPtr2 * sizeof(ITYPE)), 0);
+		checkCuda(cudaMalloc((void**) &dFbrPtr2, totFbrPtr2 * sizeof(ITYPE)), 0);
+		checkCuda(cudaMalloc((void**) &dInds3, totNnz * sizeof(ITYPE)), 0);
+	}
+
+	/* cuda memcopy for tiled parts*/
+	for (int tile = 0; tile < Opt.nTile; ++tile){	
+		if(tile > 0) {
+			dLoc += TiledX[tile-1].totNnz;
+			dSlcLoc += TiledX[tile - 1].fbrPtr[0].size(); // all tile same
+			dSlcIdxLoc += TiledX[tile - 1].fbrIdx[0].size(); 
+			dFbrLoc += TiledX[tile - 1].fbrPtr[1].size();
+			dFbrIdxLoc += TiledX[tile - 1].fbrIdx[1].size();
+			dFbrLoc2 += ((TiledX[tile].ndims == 4) ? TiledX[tile - 1].fbrPtr[2].size() : 0) ;
+		}
+
+		checkCuda(cudaMemcpy(dVals + dLoc, &(TiledX[tile].vals[0]), TiledX[tile].totNnz * sizeof(DTYPE),cudaMemcpyHostToDevice), 0);
+		checkCuda(cudaMemcpy(dfbrPtr0 + dSlcLoc, &(TiledX[tile].fbrPtr[0][0]), TiledX[tile].fbrPtr[0].size() * sizeof(ITYPE),cudaMemcpyHostToDevice), 0);
+		checkCuda(cudaMemcpy(dfbrIdx0 + dSlcIdxLoc, &(TiledX[tile].fbrIdx[0][0]), TiledX[tile].fbrIdx[0].size() * sizeof(ITYPE),cudaMemcpyHostToDevice), 0);
+		checkCuda(cudaMemcpy(dfbrPtr1 + dFbrLoc, &(TiledX[tile].fbrPtr[1][0]), TiledX[tile].fbrPtr[1].size() * sizeof(ITYPE),cudaMemcpyHostToDevice), 0);
+		checkCuda(cudaMemcpy(dfbrIdx1 + dFbrIdxLoc, &(TiledX[tile].fbrIdx[1][0]), TiledX[tile].fbrIdx[1].size() * sizeof(ITYPE),cudaMemcpyHostToDevice), 0);
+		
+		if(Opt.impType == 14)
+			checkCuda(cudaMemcpy(dFbrLikeSlcInds + dFbrIdxLoc, &(TiledX[tile].fbrLikeSlcInds[0]), TiledX[tile].fbrIdx[1].size() * sizeof(ITYPE),cudaMemcpyHostToDevice), 0);
+	
+		if(TiledX[tile].ndims == 3)
+			checkCuda(cudaMemcpy(dInds2 + dLoc, &(TiledX[tile].inds[TiledX[tile].modeOrder[2]][0]), TiledX[tile].totNnz * sizeof(ITYPE),cudaMemcpyHostToDevice), 0);			
+
+		if(TiledX[tile].ndims == 4){			
+			checkCuda(cudaMemcpy(dFbrPtr2 + dFbrLoc2, &(TiledX[tile].fbrPtr[2][0]), TiledX[tile].fbrPtr[2].size() * sizeof(ITYPE),cudaMemcpyHostToDevice), 0);
+			checkCuda(cudaMemcpy(dFbrIdx2 + dFbrLoc2, &(TiledX[tile].fbrIdx[2][0]), TiledX[tile].fbrIdx[2].size() * sizeof(ITYPE),cudaMemcpyHostToDevice), 0);
+			checkCuda(cudaMemcpy(dInds3 + dLoc, &(TiledX[tile].inds[mode3][0]), TiledX[tile].totNnz * sizeof(ITYPE),cudaMemcpyHostToDevice), 0);
+		}
+
+		dBinLoc = 0;
+		for (int bin = 0; bin < Opt.nBin; ++bin){
+
+			if(bin > 0)
+				dBinLoc += TiledX[tile].slcMapperBin[bin-1].size();
+
+		    checkCuda(cudaMemcpy(dSlcMapperBin + dSlcIdxLoc + dBinLoc, &(TiledX[tile].slcMapperBin[bin][0]), TiledX[tile].slcMapperBin[bin].size() * sizeof(ITYPE),cudaMemcpyHostToDevice), 0);
+		}
+	}
+	float tnsMemcpyTime = seconds() - t0;
+
+	t0 = seconds();
+	// //Matrices
+	DTYPE *dU0, *dU1, *dU2, *dU3;	
+	checkCuda(cudaMalloc((void**) &dU0, U[mode0].nRows * U[mode0].nCols * sizeof(DTYPE)), 0);
+	checkCuda(cudaMalloc((void**) &dU1, U[mode1].nRows * U[mode1].nCols * sizeof(DTYPE)), 0);
+	checkCuda(cudaMalloc((void**) &dU2, U[mode2].nRows * U[mode2].nCols * sizeof(DTYPE)), 0);
+
+	cudaMemset(dU0, 0,  U[mode0].nRows * U[mode0].nCols * sizeof(DTYPE));
+	checkCuda(cudaMemcpy(dU1, &(U[mode1].vals[0]), U[mode1].nRows * U[mode1].nCols * sizeof(DTYPE), cudaMemcpyHostToDevice), 0);
+	checkCuda(cudaMemcpy(dU2, &(U[mode2].vals[0]), U[mode2].nRows * U[mode2].nCols * sizeof(DTYPE), cudaMemcpyHostToDevice), 0);
+
+	float mtxMemcpyTime = seconds() - t0;
+
+	// cout << "tns and mtx memcopy time: " << tnsMemcpyTime <<", " << mtxMemcpyTime<< endl;
+	
+	if(TiledX[0].ndims == 4){
+		checkCuda(cudaMalloc((void**) &dU3, U[mode3].nRows * U[mode3].nCols * sizeof(DTYPE)), 0);
+		checkCuda(cudaMemcpy(dU3, &(U[mode3].vals[0]), U[mode3].nRows * U[mode3].nCols * sizeof(DTYPE), cudaMemcpyHostToDevice), 0);
+	}
+
+	// BLOCK and GRID
+	int BLOCKSIZE = 512;
+	unsigned int rowInATB = BLOCKSIZE / (Opt.warpPerSlice*32); 
+
+	if(Opt.warpPerSlice * 32 > BLOCKSIZE){
+		cout << "BLOCKSIZE is smaller than work per slice! Increase BLOCKSIZE." << endl;
+		exit(0);
+	}
+
+    cudaEvent_t start, stop;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
+    cudaStream_t streams[Opt.nBin];
+    float mili = 0, GPUTime = 0, CPUtimer = 0, allModeGPUTime = 0;
+
+    int smallBinEndsAt = 5;
+
+    /* Warp per slice and threadblock per size */
+    int *warpPerSlc = new int[Opt.nBin];
+    int *logOfWarpPerSlc = new int[Opt.nBin];
+    int *TbPerSlc = new int[Opt.nBin];
+    int *logOfTbPerSlc = new int[Opt.nBin];
+
+    for (int bin = 0; bin < Opt.nBin ; ++bin){
+    	
+    	TbPerSlc[bin] = 1;
+		warpPerSlc[bin] = ((bin > 0) ? 2 << (bin - 1) : 1);
+		
+		if(warpPerSlc[bin] > 16)		
+			warpPerSlc[bin] = 16;
+
+		logOfWarpPerSlc[bin] = log2(warpPerSlc[bin]);
+
+		TbPerSlc[bin] = 1;
+		logOfTbPerSlc[bin] = 0;
+		
+		if (bin >= smallBinEndsAt){
+		
+			TbPerSlc[bin] = 1 << (bin - smallBinEndsAt + 1); // 1st big bin starts with 1 TB 1 << 1 not 1 << 5
+			if(TbPerSlc[bin] > 32) TbPerSlc[bin] = 32;		
+			logOfTbPerSlc[bin] = log2(TbPerSlc[bin]);
+
+			warpPerSlc[bin] = 16;
+			logOfWarpPerSlc[bin] = 4;
+		}
+    }
+
+    // TBD: change warpPerSlc to warpPerSlc[bin] and all
+	int slcPerTb = 1;
+
+	dLoc = 0, dSlcLoc = 0, dSlcIdxLoc = 0; dFbrLoc =0, dFbrIdxLoc = 0, dFbrLoc2= 0;
+
+	for (int bin = 0; bin < Opt.nBin; ++bin)
+		cudaStreamCreate(&streams[bin]);
+
+	/*MTTKRP on Opt.mode*/
+	int MTTKRPmode = mode0;//Opt.mode;
+
+	if(performMTTKRPMode){
+		
+		for (int tile = 0; tile < Opt.nTile; ++tile){
+
+			dBinLoc = 0;
+			
+			if(tile > 0) {
+				dLoc += TiledX[tile-1].totNnz;
+				dSlcLoc += TiledX[tile - 1].fbrPtr[0].size(); 
+				dSlcIdxLoc += TiledX[tile - 1].fbrIdx[0].size(); 
+				dFbrLoc += TiledX[tile - 1].fbrPtr[1].size();
+				dFbrIdxLoc += TiledX[tile - 1].fbrIdx[1].size();
+				dFbrLoc2 += ((TiledX[0].ndims == 4) ? TiledX[tile - 1].fbrPtr[2].size() : 0) ;
+			}
+
+			// BLOCKSIZE = 512;
+			// dim3 block(BLOCKSIZE, 1, 1), grid(1, 1, 1);
+			
+			BLOCKSIZE = 128;
+			dim3 block(BLOCKSIZE, 1, 1), grid(1, 1, 1);
+			int smallBinEndsAt = 5;
+			int slcPerTb = 0;
+			int warpPerFbr = 1;//BLOCKSIZE/32;//1;//Opt.warpPerSlice;//4;//;
+			int logOfWarpPerFbr = log2(warpPerFbr);
+			int bin = 0;
+			bool useLoop = false;
+
+			// /* Like PARTI loop */ = 
+			if(useLoop)
+				grid.x = Opt.gridSize;// 32768*16; 
+			else 
+				grid.x = ( warpPerFbr * 32 * ((TiledX[tile].nFibers+3)/4) + BLOCKSIZE - 1) / BLOCKSIZE;
+
+
+			// Process small bins.. accepts 2 slice 1 TB
+
+			double t0 = seconds();
+			cuda_timer_start(start);
+
+			mttkrp_MIHCSR_kernel_slc_atomic_fbrLvlPar<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dFbrLikeSlcInds + dFbrLoc, 
+				dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[tile].nFibers, 
+				dU0, dU1, dU2, Opt.mode, Opt.R, warpPerFbr, logOfWarpPerFbr);
+			
+			// for (int bin = 0; bin < Opt.nBin ; ++bin){
+
+			// 	if(bin < smallBinEndsAt){
+					
+			// 		ITYPE shSize = 0;//slcPerTb * 32 * sizeof(DTYPE); slcPerTb = 16 / warpPerSlc[bin];
+
+			// 		dBinLoc += ((bin > 0) ? TiledX[tile].slcMapperBin[bin-1].size() : 0);
+
+			// 		grid.x = ( TbPerSlc[bin] * warpPerSlc[bin] * 32 * TiledX[tile].slcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
+
+			// 		if(TiledX[0].ndims == 3)
+			// 			mttkrp_HCSR_kernel_smllBin<<<grid, block, shSize , streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
+			// 			dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[tile].slcMapperBin[bin].size(), 
+			// 			dU0, dU1, dU2, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin], TbPerSlc[bin], logOfTbPerSlc[bin]); 
+			// 		else
+			// 			mttkrp_HCSR_kernel_smllBin_4D<<<grid, block, shSize , streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
+			// 			dInds3 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc, dfbrIdx1 + dFbrIdxLoc, dFbrPtr2 + dFbrLoc2, dFbrIdx2 + dFbrLoc2, TiledX[tile].slcMapperBin[bin].size(), 
+			// 			dU0, dU1, dU2, dU3, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin], TbPerSlc[bin], logOfTbPerSlc[bin]); 
+			// 	}
+				
+			// 	// Processing heavy bin.. multiple TB per slice
+			// 	else{
+
+			// 		dBinLoc += TiledX[tile].slcMapperBin[bin-1].size();
+							
+			// 		grid.x = (TbPerSlc[bin] * warpPerSlc[bin] * 32 * TiledX[tile].slcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
+					
+			// 			if(TiledX[0].ndims == 3)
+			// 				mttkrp_HCSR_kernel_hvyBin<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
+			// 				dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[tile].slcMapperBin[bin].size(), 
+			// 				dU0, dU1, dU2, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin],  TbPerSlc[bin], logOfTbPerSlc[bin]); 
+			// 			else
+			// 				mttkrp_HCSR_kernel_hvyBin_4D<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
+			// 				dInds3 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc, dfbrIdx1 + dFbrIdxLoc, dFbrPtr2 + dFbrLoc2, dFbrIdx2 + dFbrLoc2, TiledX[tile].slcMapperBin[bin].size(), 
+			// 				dU0, dU1, dU2, dU3, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin],  TbPerSlc[bin], logOfTbPerSlc[bin]); 
+			// 	}
+			// }
+			cuda_timer_stop(start, stop, mili);
+		    CPUtimer += seconds() - t0;
+		    GPUTime += mili;
+
+		    if(Opt.verbose){
+		    	cout << "Tile: " << tile << " - time: " << mili << "ms";
+		    	cout <<" nnz: " << TiledX[tile].totNnz << " nFibers: "
+		    	<< TiledX[tile].fbrPtr[1].size() << " nSlc " << TiledX[tile].fbrIdx[0].size() << " ";
+				cout << endl;
+			} 
+		}
+	}
+	allModeGPUTime += GPUTime;
+	cout << "singleCSF-GPU-mode " << MTTKRPmode <<" :" << GPUTime << "," << endl;
+	
+	/*MTTKRP on next and next-next mode using same-CSF*/
+	if(Opt.impType == 14){
+		
+		/*next mode*/
+
+		MTTKRPmode = mode1;//(1 + Opt.mode) % TiledX[0].ndims;
+
+		if(performMTTKRPnMode){
+
+			mili = 0, GPUTime = 0, CPUtimer = 0;
+			dLoc = 0, dSlcLoc = 0, dSlcIdxLoc = 0; dFbrLoc =0, dFbrIdxLoc = 0, dFbrLoc2= 0;
+
+			//  U[mode].vals is all 0.To pass correctness for now initializing to 2 again.
+		    for(long r = 0; r < U[mode0].nRows; ++r){
+		        for(long c = 0; c < U[mode0].nCols; ++c) // or u[mode].nCols 
+		            U[mode0].vals[r * U[mode0].nCols + c] = mode0 + .5;//2 * drand48(); //1 ;//(r * R + c + 1); //
+		    }
+
+		    checkCuda(cudaMemcpy(dU0, &(U[mode0].vals[0]), U[mode0].nRows * U[mode0].nCols * sizeof(DTYPE), cudaMemcpyHostToDevice), 0);	
+			cudaMemset(dU1, 0,  U[mode1].nRows * U[mode1].nCols * sizeof(DTYPE));
+
+			for (int tile = 0; tile < Opt.nTile; ++tile){
+
+				dBinLoc = 0;
+				
+				if(tile > 0) {
+					dLoc += TiledX[tile-1].totNnz;
+					dSlcLoc += TiledX[tile - 1].fbrPtr[0].size(); 
+					dSlcIdxLoc += TiledX[tile - 1].fbrIdx[0].size(); 
+					dFbrLoc += TiledX[tile - 1].fbrPtr[1].size();
+					dFbrIdxLoc += TiledX[tile - 1].fbrIdx[1].size();
+					dFbrLoc2 += ((TiledX[0].ndims == 4) ? TiledX[tile - 1].fbrPtr[2].size() : 0) ;
+				}
+				// cout <<"might wanna change binning style and Block size, logWPC, COO like parallelism, allow mode sort" << endl;
+
+				BLOCKSIZE = 128;//Opt.TBsize;
+				dim3 block(BLOCKSIZE, 1, 1), grid(1, 1, 1);
+
+				int smallBinEndsAt = 5;
+				int slcPerTb = 0;
+				int warpPerFbr = 1;//BLOCKSIZE/32;//1;//Opt.warpPerSlice;//4;//;
+				int logOfWarpPerFbr = log2(warpPerFbr);
+				int bin = 0;
+				bool useLoop = false;
+	
+				// /* Like PARTI loop */ = 
+				if(useLoop)
+					grid.x = Opt.gridSize;// 32768*16; 
+				else 
+					grid.x = ( warpPerFbr * 32 * TiledX[tile].nFibers + BLOCKSIZE - 1) / BLOCKSIZE;
+
+				// Process small bins.. accepts 2 slice 1 TB
+
+				double t0 = seconds();
+				cuda_timer_start(start);
+				
+				if(useLoop)
+					mttkrp_MIHCSR_kernel_fbr_atomic_fbrLvlPar_loop<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dFbrLikeSlcInds + dFbrLoc, 
+				dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[tile].nFibers, 
+				dU1, dU2, dU0, Opt.mode, Opt.R, warpPerFbr, logOfWarpPerFbr);
+				
+				else
+					mttkrp_MIHCSR_kernel_fbr_atomic_fbrLvlPar<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dFbrLikeSlcInds + dFbrLoc, 
+				dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[tile].nFibers, 
+				dU1, dU2, dU0, Opt.mode, Opt.R, warpPerFbr, logOfWarpPerFbr);
+
+				cuda_timer_stop(start, stop, mili);
+			    CPUtimer += seconds() - t0;
+			    GPUTime += mili;
+
+			    if(Opt.verbose){
+			    	cout << "Tile: " << tile << " - time: " << mili << "ms";
+			    	cout <<" nnz: " << TiledX[tile].totNnz << " nFibers: "
+			    	<< TiledX[tile].fbrPtr[1].size() << " nSlc " << TiledX[tile].fbrIdx[0].size() << " ";
+					cout << endl;
+				} 
+			}
+			allModeGPUTime += GPUTime;
+			cout << "singleCSF-GPU-mode " << MTTKRPmode <<" :" << GPUTime << "," << endl;
+		} 
+
+
+		/*next-next mode*/
+
+		// prevMode = MTTKRPmode;
+		MTTKRPmode = mode2;//(2 + Opt.mode) % TiledX[0].ndims;
+
+		if(performMTTKRPnnMode){
+
+			mili = 0, GPUTime = 0, CPUtimer = 0;
+			dLoc = 0, dSlcLoc = 0, dSlcIdxLoc = 0; dFbrLoc =0, dFbrIdxLoc = 0, dFbrLoc2= 0;
+
+			// MTTKRP on mode mode 1 changed DU1. To pass correctness for now initializing to 2 again.
+
+		    for(long r = 0; r < U[mode1].nRows; ++r){
+		        for(long c = 0; c < U[mode1].nCols; ++c) // or u[mode].nCols 
+		            U[mode1].vals[r * U[mode1].nCols + c] = mode1 + .5;// drand48(); //1 ;//(r * R + c + 1); //
+		    }
+		    for(long r = 0; r < U[mode0].nRows; ++r){
+		        for(long c = 0; c < U[mode0].nCols; ++c) // or u[mode].nCols 
+		            U[mode0].vals[r * U[mode0].nCols + c] = mode0 + .5;//2 * drand48(); //1 ;//(r * R + c + 1); //
+		    }
+ 			checkCuda(cudaMemcpy(dU0, &(U[mode0].vals[0]), U[mode0].nRows * U[mode0].nCols * sizeof(DTYPE), cudaMemcpyHostToDevice), 0);	
+		    checkCuda(cudaMemcpy(dU1, &(U[mode1].vals[0]), U[mode1].nRows * U[mode1].nCols * sizeof(DTYPE), cudaMemcpyHostToDevice), 0);	
+			cudaMemset(dU2, 0,  U[mode2].nRows * U[mode2].nCols * sizeof(DTYPE));
+
+			for (int tile = 0; tile < Opt.nTile; ++tile){
+
+				dBinLoc = 0;
+				
+				if(tile > 0) {
+					dLoc += TiledX[tile-1].totNnz;
+					dSlcLoc += TiledX[tile - 1].fbrPtr[0].size(); 
+					dSlcIdxLoc += TiledX[tile - 1].fbrIdx[0].size(); 
+					dFbrLoc += TiledX[tile - 1].fbrPtr[1].size();
+					dFbrIdxLoc += TiledX[tile - 1].fbrIdx[1].size();
+					dFbrLoc2 += ((TiledX[0].ndims == 4) ? TiledX[tile - 1].fbrPtr[2].size() : 0) ;
+				}
+
+				BLOCKSIZE = 128; ///Opt.TBsize;
+				dim3 block(BLOCKSIZE, 1, 1), grid(1, 1, 1);
+
+				bool useLoop = false;
+				int smallBinEndsAt = 5;
+				int slcPerTb = 0;
+				int warpPerFbr = 1;//Opt.warpPerSlice;//4;//;BLOCKSIZE/32;//
+				int logOfWarpPerFbr = log2(warpPerFbr);
+				int bin = 0;
+				
+	
+				// /* Like PARTI loop */ = 
+				if(useLoop)
+					grid.x = Opt.gridSize;// 32768;
+				else 
+					grid.x = ( warpPerFbr * 32 * TiledX[tile].nFibers + BLOCKSIZE - 1) / BLOCKSIZE;
+				// cout <<"might wanna change binning style and Block size, allow mode sort" << endl;
+
+				
+				double t0 = seconds();
+				cuda_timer_start(start);
+
+				if(useLoop)
+					mttkrp_MIHCSR_kernel_all_atomic_fbrLvlPar_loop<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dFbrLikeSlcInds + dFbrLoc, 
+				dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[tile].nFibers, 
+				dU2, dU0, dU1, Opt.mode, Opt.R, warpPerFbr, logOfWarpPerFbr);
+				
+				else
+					mttkrp_MIHCSR_kernel_all_atomic_fbrLvlPar<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dFbrLikeSlcInds + dFbrLoc, 
+				dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[tile].nFibers, 
+				dU2, dU0, dU1, Opt.mode, Opt.R, warpPerFbr, logOfWarpPerFbr); 
+				
+				cuda_timer_stop(start, stop, mili);
+			    CPUtimer += seconds() - t0;
+			    GPUTime += mili;
+
+			    if(Opt.verbose){
+			    	cout << "Tile: " << tile << " - time: " << mili << "ms";
+			    	cout <<" nnz: " << TiledX[tile].totNnz << " nFibers: "
+			    	<< TiledX[tile].fbrPtr[1].size() << " nSlc " << TiledX[tile].fbrIdx[0].size() << " ";
+					cout << endl;
+				} 
+			} 
+			allModeGPUTime += GPUTime; 
+			cout << "singleCSF-GPU-mode " << MTTKRPmode <<" :" << GPUTime << "," << endl;
+		}
+	}
+	cout << "Total GPU time: " << allModeGPUTime << ", nnz:" << TiledX[0].totNnz 
+		<< ", nFibers:" << TiledX[0].fbrPtr[1].size() << ", nSlc:" << TiledX[0].fbrIdx[0].size()
+		<< endl;
+
+	for (int bin = 0; bin < Opt.nBin; ++bin)
+		cudaStreamDestroy(streams[bin]);
+	// check correctness
+	if(Opt.impType == 14){
+		MTTKRPmode = mode0;
+		checkCuda(cudaMemcpy(&U[MTTKRPmode].vals[0], dU0, U[MTTKRPmode].nRows * U[MTTKRPmode].nCols * sizeof(DTYPE), cudaMemcpyDeviceToHost), 0);
 	}
 	else
 		checkCuda(cudaMemcpy(&U[mode0].vals[0], dU0, U[mode0].nRows * U[mode0].nCols * sizeof(DTYPE), cudaMemcpyDeviceToHost), 0);
@@ -2201,6 +2712,8 @@ int MTTKRP_MIHCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 		cudaStreamCreate(&streams[bin]);
 
 	/* MTTKRP on mode 0,1,2 using MICSF*/
+	cout << "change loop, double!!" << endl;
+
 	for (int MTTKRPmode = 0; MTTKRPmode <  TiledX[0].ndims; ++MTTKRPmode){
 
 		if(MTTKRPmode > 0){
@@ -2260,98 +2773,147 @@ int MTTKRP_MIHCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 				
 				if(Opt.verbose)
 					cout << "Slc atomics - " ;
+
+				BLOCKSIZE = 128;
+				dim3 block(BLOCKSIZE, 1, 1), grid(1, 1, 1);
+				int slcPerTb = 0;
+				int warpPerFbr = 1;//BLOCKSIZE/32;//1;//Opt.warpPerSlice;//4;//;
+				int logOfWarpPerFbr = log2(warpPerFbr);
+				int bin = 0;
+				bool useLoop = false;
+
+				
+				grid.x = ( warpPerFbr * 32 * ((TiledX[m].nFibers+3)/4) + BLOCKSIZE - 1) / BLOCKSIZE;
+						
+				if(MTTKRPmode == 0){
+				
+					if(TiledX[m].modeOrder[2] == orgMode)
+						mttkrp_MIHCSR_kernel_slc_atomic_fbrLvlPar<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dFbrLikeSlcInds + dFbrLoc, 
+						dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].nFibers, 
+						dU0, dU1, dU2, Opt.mode, Opt.R, warpPerFbr, logOfWarpPerFbr);
+
+					else
+						mttkrp_MIHCSR_kernel_slc_atomic_fbrLvlPar<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dFbrLikeSlcInds + dFbrLoc, 
+						dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].nFibers, 
+						dU0, dU2, dU1, Opt.mode, Opt.R, warpPerFbr, logOfWarpPerFbr);
+				}
+				else if(MTTKRPmode == 1){
+				
+					if(TiledX[m].modeOrder[2] == orgMode)
+						mttkrp_MIHCSR_kernel_slc_atomic_fbrLvlPar<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dFbrLikeSlcInds + dFbrLoc, 
+						dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].nFibers, 
+						dU1, dU2, dU0, Opt.mode, Opt.R, warpPerFbr, logOfWarpPerFbr);
+					else
+						mttkrp_MIHCSR_kernel_slc_atomic_fbrLvlPar<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dFbrLikeSlcInds + dFbrLoc, 
+						dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].nFibers, 
+						dU1, dU0, dU2, Opt.mode, Opt.R, warpPerFbr, logOfWarpPerFbr);
+				}
+				
+				else if(MTTKRPmode == 2){
+				
+					if(TiledX[m].modeOrder[2] == orgMode)
+						mttkrp_MIHCSR_kernel_slc_atomic_fbrLvlPar<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dFbrLikeSlcInds + dFbrLoc, 
+						dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].nFibers, 
+						dU2, dU0, dU1, Opt.mode, Opt.R, warpPerFbr, logOfWarpPerFbr);
+					else
+						mttkrp_MIHCSR_kernel_slc_atomic_fbrLvlPar<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dFbrLikeSlcInds + dFbrLoc, 
+						dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].nFibers, 
+						dU2, dU1, dU0, Opt.mode, Opt.R, warpPerFbr, logOfWarpPerFbr);
+				}
+				{
 			
-				for (int bin = 0; bin < Opt.nBin ; ++bin){
+					// for (int bin = 0; bin < Opt.nBin ; ++bin){
 
-					if(bin < smallBinEndsAt){
+					// 	if(bin < smallBinEndsAt){
 
-						dBinLoc += ((bin > 0) ? TiledX[m].slcMapperBin[bin-1].size() : 0);
+					// 		dBinLoc += ((bin > 0) ? TiledX[m].slcMapperBin[bin-1].size() : 0);
 
-						grid.x = ( TbPerSlc[bin] * warpPerSlc[bin] * 32 * TiledX[m].slcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
-						
-						//only diff order between du0, du1,du2
-						if(MTTKRPmode == 0){
-						
-							if(TiledX[m].modeOrder[2] == orgMode)
-								mttkrp_HCSR_kernel_smllBin<<<grid, block, 0 , streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
-								dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].slcMapperBin[bin].size(), 
-								dU0, dU1, dU2, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin], TbPerSlc[bin], logOfTbPerSlc[bin]); 
-							else
-								mttkrp_HCSR_kernel_smllBin<<<grid, block, 0 , streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
-								dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].slcMapperBin[bin].size(), 
-								dU0, dU2, dU1, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin], TbPerSlc[bin], logOfTbPerSlc[bin]); 
-						}
-						else if(MTTKRPmode == 1){
-
-							if(TiledX[m].modeOrder[2] == orgMode)
-								mttkrp_HCSR_kernel_smllBin<<<grid, block, 0 , streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
-								dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].slcMapperBin[bin].size(), 
-								dU1, dU2, dU0, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin], TbPerSlc[bin], logOfTbPerSlc[bin]); 
-							else
-								mttkrp_HCSR_kernel_smllBin<<<grid, block, 0 , streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
-								dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].slcMapperBin[bin].size(), 
-								dU1, dU0, dU2, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin], TbPerSlc[bin], logOfTbPerSlc[bin]); 
-
-						}
-						else if(MTTKRPmode == 2){
-
-							if(TiledX[m].modeOrder[2] == orgMode)
-								mttkrp_HCSR_kernel_smllBin<<<grid, block, 0 , streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
-								dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].slcMapperBin[bin].size(), 
-								dU2, dU0, dU1, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin], TbPerSlc[bin], logOfTbPerSlc[bin]); 
-							else
-								mttkrp_HCSR_kernel_smllBin<<<grid, block, 0 , streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
-								dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].slcMapperBin[bin].size(), 
-								dU2, dU1, dU0, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin], TbPerSlc[bin], logOfTbPerSlc[bin]); 
-							}
+					// 		grid.x = ( TbPerSlc[bin] * warpPerSlc[bin] * 32 * TiledX[m].slcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
 							
-					}
+					// 		//only diff order between du0, du1,du2
+					// 		if(MTTKRPmode == 0){
+							
+					// 			if(TiledX[m].modeOrder[2] == orgMode)
+					// 				mttkrp_HCSR_kernel_smllBin<<<grid, block, 0 , streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
+					// 				dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].slcMapperBin[bin].size(), 
+					// 				dU0, dU1, dU2, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin], TbPerSlc[bin], logOfTbPerSlc[bin]); 
+					// 			else
+					// 				mttkrp_HCSR_kernel_smllBin<<<grid, block, 0 , streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
+					// 				dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].slcMapperBin[bin].size(), 
+					// 				dU0, dU2, dU1, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin], TbPerSlc[bin], logOfTbPerSlc[bin]); 
+					// 		}
+					// 		else if(MTTKRPmode == 1){
 
-					
-					// Processing heavy bin.. multiple TB per slice
-					else{
+					// 			if(TiledX[m].modeOrder[2] == orgMode)
+					// 				mttkrp_HCSR_kernel_smllBin<<<grid, block, 0 , streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
+					// 				dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].slcMapperBin[bin].size(), 
+					// 				dU1, dU2, dU0, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin], TbPerSlc[bin], logOfTbPerSlc[bin]); 
+					// 			else
+					// 				mttkrp_HCSR_kernel_smllBin<<<grid, block, 0 , streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
+					// 				dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].slcMapperBin[bin].size(), 
+					// 				dU1, dU0, dU2, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin], TbPerSlc[bin], logOfTbPerSlc[bin]); 
 
-						dBinLoc += TiledX[m].slcMapperBin[bin-1].size();
+					// 		}
+					// 		else if(MTTKRPmode == 2){
+
+					// 			if(TiledX[m].modeOrder[2] == orgMode)
+					// 				mttkrp_HCSR_kernel_smllBin<<<grid, block, 0 , streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
+					// 				dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].slcMapperBin[bin].size(), 
+					// 				dU2, dU0, dU1, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin], TbPerSlc[bin], logOfTbPerSlc[bin]); 
+					// 			else
+					// 				mttkrp_HCSR_kernel_smllBin<<<grid, block, 0 , streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
+					// 				dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].slcMapperBin[bin].size(), 
+					// 				dU2, dU1, dU0, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin], TbPerSlc[bin], logOfTbPerSlc[bin]); 
+					// 			}
 								
-						grid.x = (TbPerSlc[bin] * warpPerSlc[bin] * 32 * TiledX[m].slcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
-								
-						if(MTTKRPmode == 0){		
-						
-							if(TiledX[m].modeOrder[2] == orgMode)
-								mttkrp_HCSR_kernel_hvyBin<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
-								dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].slcMapperBin[bin].size(), 
-								dU0, dU1, dU2, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin],  TbPerSlc[bin], logOfTbPerSlc[bin]); 
-							else
-								mttkrp_HCSR_kernel_hvyBin<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
-								dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].slcMapperBin[bin].size(), 
-								dU0, dU2, dU1, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin],  TbPerSlc[bin], logOfTbPerSlc[bin]); 
-						}
+					// 	}
 
-						else if(MTTKRPmode == 1){		
 						
-							if(TiledX[m].modeOrder[2] == orgMode)
-								mttkrp_HCSR_kernel_hvyBin<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
-								dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].slcMapperBin[bin].size(), 
-								dU1, dU2, dU0, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin],  TbPerSlc[bin], logOfTbPerSlc[bin]); 
-							else
-								mttkrp_HCSR_kernel_hvyBin<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
-								dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].slcMapperBin[bin].size(), 
-								dU1, dU0, dU2, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin],  TbPerSlc[bin], logOfTbPerSlc[bin]); 
-						}
+					// 	// Processing heavy bin.. multiple TB per slice
+					// 	else{
+
+					// 		dBinLoc += TiledX[m].slcMapperBin[bin-1].size();
+									
+					// 		grid.x = (TbPerSlc[bin] * warpPerSlc[bin] * 32 * TiledX[m].slcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
+									
+					// 		if(MTTKRPmode == 0){		
+							
+					// 			if(TiledX[m].modeOrder[2] == orgMode)
+					// 				mttkrp_HCSR_kernel_hvyBin<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
+					// 				dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].slcMapperBin[bin].size(), 
+					// 				dU0, dU1, dU2, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin],  TbPerSlc[bin], logOfTbPerSlc[bin]); 
+					// 			else
+					// 				mttkrp_HCSR_kernel_hvyBin<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
+					// 				dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].slcMapperBin[bin].size(), 
+					// 				dU0, dU2, dU1, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin],  TbPerSlc[bin], logOfTbPerSlc[bin]); 
+					// 		}
+
+					// 		else if(MTTKRPmode == 1){		
+							
+					// 			if(TiledX[m].modeOrder[2] == orgMode)
+					// 				mttkrp_HCSR_kernel_hvyBin<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
+					// 				dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].slcMapperBin[bin].size(), 
+					// 				dU1, dU2, dU0, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin],  TbPerSlc[bin], logOfTbPerSlc[bin]); 
+					// 			else
+					// 				mttkrp_HCSR_kernel_hvyBin<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
+					// 				dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].slcMapperBin[bin].size(), 
+					// 				dU1, dU0, dU2, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin],  TbPerSlc[bin], logOfTbPerSlc[bin]); 
+					// 		}
 
 
-						else if(MTTKRPmode == 2){		
-						
-							if(TiledX[m].modeOrder[2] == orgMode)
-								mttkrp_HCSR_kernel_hvyBin<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
-								dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].slcMapperBin[bin].size(), 
-								dU2, dU0, dU1, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin],  TbPerSlc[bin], logOfTbPerSlc[bin]); 
-							else
-								mttkrp_HCSR_kernel_hvyBin<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
-								dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].slcMapperBin[bin].size(), 
-								dU2, dU1, dU0, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin],  TbPerSlc[bin], logOfTbPerSlc[bin]); 
-						}
-					}
+					// 		else if(MTTKRPmode == 2){		
+							
+					// 			if(TiledX[m].modeOrder[2] == orgMode)
+					// 				mttkrp_HCSR_kernel_hvyBin<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
+					// 				dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].slcMapperBin[bin].size(), 
+					// 				dU2, dU0, dU1, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin],  TbPerSlc[bin], logOfTbPerSlc[bin]); 
+					// 			else
+					// 				mttkrp_HCSR_kernel_hvyBin<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
+					// 				dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].slcMapperBin[bin].size(), 
+					// 				dU2, dU1, dU0, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin],  TbPerSlc[bin], logOfTbPerSlc[bin]); 
+					// 		}
+					// 	}
+					// }
 				}
 			}
 
@@ -2404,94 +2966,6 @@ int MTTKRP_MIHCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 						dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].nFibers, 
 						dU2, dU1, dU0, Opt.mode, Opt.R, warpPerFbr, logOfWarpPerFbr);
 				}
-				
-				// for (int bin = 0; bin < Opt.nBin ; ++bin){
-
-				// 	if(bin < smallBinEndsAt){
-
-				// 		dBinLoc += ((bin > 0) ? TiledX[m].slcMapperBin[bin-1].size() : 0);
-
-				// 		grid.x = ( TbPerSlc[bin] * warpPerSlc[bin] * 32 * TiledX[m].slcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
-						
-				// 		if(MTTKRPmode == 0){
-						
-				// 			if(TiledX[m].modeOrder[2] == orgMode)
-				// 				mttkrp_MIHCSR_kernel_smllBin_fbr_atomic<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
-				// 				dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].slcMapperBin[bin].size(), 
-				// 				dU0, dU1, dU2, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin], TbPerSlc[bin], logOfTbPerSlc[bin]); 
-				// 			else
-				// 				mttkrp_MIHCSR_kernel_smllBin_fbr_atomic<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
-				// 				dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].slcMapperBin[bin].size(), 
-				// 				dU0, dU2, dU1, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin], TbPerSlc[bin], logOfTbPerSlc[bin]); 
-				// 		}
-				// 		else if(MTTKRPmode == 1){
-						
-				// 			if(TiledX[m].modeOrder[2] == orgMode)
-				// 				mttkrp_MIHCSR_kernel_smllBin_fbr_atomic<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
-				// 				dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].slcMapperBin[bin].size(), 
-				// 				dU1, dU2, dU0, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin], TbPerSlc[bin], logOfTbPerSlc[bin]); 
-				// 			else
-				// 				mttkrp_MIHCSR_kernel_smllBin_fbr_atomic<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
-				// 				dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].slcMapperBin[bin].size(), 
-				// 				dU1, dU0, dU2, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin], TbPerSlc[bin], logOfTbPerSlc[bin]); 
-				// 		}
-						
-				// 		else if(MTTKRPmode == 2){
-						
-				// 			if(TiledX[m].modeOrder[2] == orgMode)
-				// 				mttkrp_MIHCSR_kernel_smllBin_fbr_atomic<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
-				// 				dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].slcMapperBin[bin].size(), 
-				// 				dU2, dU0, dU1, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin], TbPerSlc[bin], logOfTbPerSlc[bin]); 
-				// 			else
-				// 				mttkrp_MIHCSR_kernel_smllBin_fbr_atomic<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
-				// 				dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].slcMapperBin[bin].size(), 
-				// 				dU2, dU1, dU0, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin], TbPerSlc[bin], logOfTbPerSlc[bin]); 
-				// 		}
-				// 	}
-					
-				// 	// Processing heavy bin.. multiple TB per slice
-				// 	else{
-
-				// 		dBinLoc += TiledX[m].slcMapperBin[bin-1].size();
-								
-				// 		grid.x = (TbPerSlc[bin] * warpPerSlc[bin] * 32 * TiledX[m].slcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
-							
-				// 		if(MTTKRPmode == 0){	
-
-				// 			if(TiledX[m].modeOrder[2] == orgMode)
-				// 				mttkrp_MIHCSR_kernel_hvyBin_fbr_atomic<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
-				// 				dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].slcMapperBin[bin].size(), 
-				// 				dU0, dU1, dU2, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin],  TbPerSlc[bin], logOfTbPerSlc[bin]); 
-				// 			else
-				// 				mttkrp_MIHCSR_kernel_hvyBin_fbr_atomic<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
-				// 				dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].slcMapperBin[bin].size(), 
-				// 				dU0, dU2, dU1, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin],  TbPerSlc[bin], logOfTbPerSlc[bin]); 
-				// 		}
-						
-				// 		else if(MTTKRPmode == 1){	
-							
-				// 			if(TiledX[m].modeOrder[2] == orgMode)
-				// 				mttkrp_MIHCSR_kernel_hvyBin_fbr_atomic<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
-				// 				dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].slcMapperBin[bin].size(), 
-				// 				dU1, dU2, dU0, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin],  TbPerSlc[bin], logOfTbPerSlc[bin]); 
-				// 			else
-				// 				mttkrp_MIHCSR_kernel_hvyBin_fbr_atomic<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
-				// 				dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].slcMapperBin[bin].size(), 
-				// 				dU1, dU0, dU2, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin],  TbPerSlc[bin], logOfTbPerSlc[bin]); 
-				// 		}
-				// 		else if(MTTKRPmode == 2){	
-							
-				// 			if(TiledX[m].modeOrder[2] == orgMode)
-				// 				mttkrp_MIHCSR_kernel_hvyBin_fbr_atomic<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
-				// 				dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].slcMapperBin[bin].size(), 
-				// 				dU2, dU0, dU1, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin],  TbPerSlc[bin], logOfTbPerSlc[bin]); 
-				// 			else
-				// 				mttkrp_MIHCSR_kernel_hvyBin_fbr_atomic<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
-				// 				dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].slcMapperBin[bin].size(), 
-				// 				dU2, dU1, dU0, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin],  TbPerSlc[bin], logOfTbPerSlc[bin]); 
-				// 		}
-				// 	}
-				// }
 			}
 
 			else if(TiledX[m].modeOrder[2] == MTTKRPmode && TiledX[m].totNnz){
@@ -2543,93 +3017,6 @@ int MTTKRP_MIHCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 						dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].nFibers, 
 						dU2, dU1, dU0, Opt.mode, Opt.R, warpPerFbr, logOfWarpPerFbr);
 				}
-
-				// for (int bin = 0; bin < Opt.nBin; ++bin){
-
-				// 	if(bin < smallBinEndsAt){
-
-				// 		dBinLoc += ((bin > 0) ? TiledX[m].slcMapperBin[bin-1].size() : 0);
-
-				// 		grid.x = ( TbPerSlc[bin] * warpPerSlc[bin] * 32 * TiledX[m].slcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
-						
-				// 		if(MTTKRPmode == 0){	
-
-				// 			if(TiledX[m].modeOrder[2] == orgMode)
-				// 				mttkrp_MIHCSR_kernel_smllBin_all_atomic<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
-				// 				dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].slcMapperBin[bin].size(), 
-				// 				dU0, dU1, dU2, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin], TbPerSlc[bin], logOfTbPerSlc[bin]); 						
-				// 			else
-				// 				mttkrp_MIHCSR_kernel_smllBin_all_atomic<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
-				// 				dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].slcMapperBin[bin].size(), 
-				// 				dU0, dU2, dU1, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin], TbPerSlc[bin], logOfTbPerSlc[bin]); 						
-				// 		}
-				// 		else if(MTTKRPmode == 1){	
-										
-				// 			if(TiledX[m].modeOrder[2] == orgMode)
-				// 				mttkrp_MIHCSR_kernel_smllBin_all_atomic<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
-				// 				dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].slcMapperBin[bin].size(), 
-				// 				dU1, dU2, dU0, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin], TbPerSlc[bin], logOfTbPerSlc[bin]); 						
-				// 			else
-				// 				mttkrp_MIHCSR_kernel_smllBin_all_atomic<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
-				// 				dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].slcMapperBin[bin].size(), 
-				// 				dU1, dU0, dU2, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin], TbPerSlc[bin], logOfTbPerSlc[bin]); 						
-				// 		}
-				// 		else if(MTTKRPmode == 2){	
-										
-				// 			if(TiledX[m].modeOrder[2] == orgMode)
-				// 				mttkrp_MIHCSR_kernel_smllBin_all_atomic<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
-				// 				dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].slcMapperBin[bin].size(), 
-				// 				dU2, dU0, dU1, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin], TbPerSlc[bin], logOfTbPerSlc[bin]); 						
-				// 			else
-				// 				mttkrp_MIHCSR_kernel_smllBin_all_atomic<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
-				// 				dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].slcMapperBin[bin].size(), 
-				// 				dU2, dU1, dU0, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin], TbPerSlc[bin], logOfTbPerSlc[bin]); 						
-				// 		}	
-				// 	}
-					
-				// 	// Processing heavy bin.. multiple TB per slice
-				// 	else{
-
-				// 		dBinLoc += TiledX[m].slcMapperBin[bin-1].size();
-								
-				// 		grid.x = (TbPerSlc[bin] * warpPerSlc[bin] * 32 * TiledX[m].slcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
-						
-				// 		if(MTTKRPmode == 0){	
-								
-				// 			if(TiledX[m].modeOrder[2] == orgMode)
-				// 				mttkrp_MIHCSR_kernel_hvyBin_all_atomic<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
-				// 				dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].slcMapperBin[bin].size(), 
-				// 				dU0, dU1, dU2, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin],  TbPerSlc[bin], logOfTbPerSlc[bin]); 
-				// 			else
-				// 				mttkrp_MIHCSR_kernel_hvyBin_all_atomic<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
-				// 				dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].slcMapperBin[bin].size(), 
-				// 				dU0, dU2, dU1, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin],  TbPerSlc[bin], logOfTbPerSlc[bin]); 
-				// 		}
-				// 		else if(MTTKRPmode == 1){	
-								
-				// 			if(TiledX[m].modeOrder[2] == orgMode)
-				// 				mttkrp_MIHCSR_kernel_hvyBin_all_atomic<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
-				// 				dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].slcMapperBin[bin].size(), 
-				// 				dU1, dU2, dU0, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin],  TbPerSlc[bin], logOfTbPerSlc[bin]); 
-				// 			else
-				// 				mttkrp_MIHCSR_kernel_hvyBin_all_atomic<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
-				// 				dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].slcMapperBin[bin].size(), 
-				// 				dU1, dU0, dU2, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin],  TbPerSlc[bin], logOfTbPerSlc[bin]); 
-				// 		}
-						
-				// 		else if(MTTKRPmode == 2){	
-								
-				// 			if(TiledX[m].modeOrder[2] == orgMode)
-				// 				mttkrp_MIHCSR_kernel_hvyBin_all_atomic<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
-				// 				dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].slcMapperBin[bin].size(), 
-				// 				dU2, dU0, dU1, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin],  TbPerSlc[bin], logOfTbPerSlc[bin]); 
-				// 			else
-				// 				mttkrp_MIHCSR_kernel_hvyBin_all_atomic<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
-				// 				dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].slcMapperBin[bin].size(), 
-				// 				dU2, dU1, dU0, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin],  TbPerSlc[bin], logOfTbPerSlc[bin]); 
-				// 		}
-				// 	}
-				// }
 			}
 		
 			cuda_timer_stop(start, stop, mili);
@@ -2669,7 +3056,7 @@ int MTTKRP_MIHCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 	// Copying output matrix from GPU to CPU
 	
 	if(Opt.impType == 12){
-		int MTTKRPmode = 2;
+		int MTTKRPmode = mode2;
 		checkCuda(cudaMemcpy(&U[MTTKRPmode].vals[0], dU2, U[MTTKRPmode].nRows * U[MTTKRPmode].nCols * sizeof(DTYPE), cudaMemcpyDeviceToHost), 0);
 	}
 	else

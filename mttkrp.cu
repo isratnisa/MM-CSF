@@ -146,14 +146,15 @@ int main(int argc, char* argv[]){
 
         // TILED HCSR GPU
         else if(Opt.impType == 8){
-            cout << "Sorted mode: " << X.modeOrder[0] << " " << X.modeOrder[1] << " " <<X.modeOrder[2] << endl;
+             cout << "Sorted mode: " << X.modeOrder[0] << " " << X.modeOrder[1] << " " <<X.modeOrder[2] << endl;
 
-            MTTKRP_TILED_HCSR_GPU(TiledX, U, Opt);
+            MTTKRP_B_HCSR_GPU(TiledX, U, Opt);
         }
+
 
         // TILED + shared HCSR GPU
         else if(Opt.impType == 9){
-            MTTKRP_TILED_HCSR_GPU(TiledX, U, Opt);
+            MTTKRP_B_HCSR_GPU(TiledX, U, Opt);
         }
     }
 
@@ -223,7 +224,8 @@ int main(int argc, char* argv[]){
                 if(TiledX[tile].totNnz > 0)
                     make_TiledBin(TiledX, Opt, tile);
             }
-            MTTKRP_TILED_HCSR_GPU(TiledX, U, Opt);
+            MTTKRP_ONE_HCSR_GPU(TiledX, U, Opt);
+            // MTTKRP_B_HCSR_GPU(TiledX, U, Opt);
         }
     }
 
@@ -264,7 +266,7 @@ int main(int argc, char* argv[]){
         TiledTensor ModeWiseTiledX[X.ndims];
         t0 = seconds();
         find_hvyslc_allMode(arrX, X, ModeWiseTiledX, Opt);
-        populate_paritions(X, ModeWiseTiledX);
+        // populate_paritions(X, ModeWiseTiledX);
         printf("findHvySlice& populate - time: %.3f sec \n", seconds() - t0);
         
         t0 = seconds();
@@ -276,9 +278,8 @@ int main(int argc, char* argv[]){
             #pragma omp for 
             for (int m = 0; m < X.ndims; ++m){
                 
-                if(ModeWiseTiledX[m].totNnz > 0){ 
-                    if(m!=Opt.mode)          
-                        sort_MI_CSF(X, ModeWiseTiledX, m);
+                if(ModeWiseTiledX[m].totNnz > 0){           
+                    sort_MI_CSF(X, ModeWiseTiledX, m);
                     create_TiledHCSR(ModeWiseTiledX, Opt, m);
                     create_fbrLikeSlcInds(ModeWiseTiledX, m);
                     make_TiledBin(ModeWiseTiledX, Opt, m);
@@ -322,6 +323,7 @@ int main(int argc, char* argv[]){
         
         /* on GPU */
         else if(Opt.impType == 12){ 
+            cout <<"OFF!" <<endl;
 
             MTTKRP_MIHCSR_GPU(ModeWiseTiledX, U, Opt);
 
@@ -343,8 +345,8 @@ int main(int argc, char* argv[]){
         }
         if(Opt.verbose && Opt.impType == 12)
             cout << "checking only the last mode" << endl;
-        // Opt.mode = X.modeOrder[2];
-        Opt.mode = 2;//((Opt.impType == 12) ? 2 : Opt.mode);
+        Opt.mode = 0;//X.modeOrder[2];
+        // Opt.mode = 2;//((Opt.impType == 12) ? 2 : Opt.mode);
         int mode = Opt.mode;
         int nr = U[mode].nRows;  
         int nc = U[mode].nCols;
