@@ -6,6 +6,7 @@
 
 #include <vector>
 #include <algorithm>
+#include <boost/sort/sort.hpp>
 // #include <parallel/algorithm>
 #include <iterator>
 #include <unordered_map>
@@ -299,8 +300,8 @@ inline int sort_COOtensor(Tensor &X){
     }
 
     // std::sort(std::parallel::par, items.begin(), items.end(), sort_pred);
-    std::sort(items.begin(), items.end(), sort_pred);
-    // boost::sort::sample_sort(items.begin(), items.end(), sort_pred);
+    // std::sort(items.begin(), items.end(), sort_pred);
+    boost::sort::sample_sort(items.begin(), items.end(), sort_pred);
 
     for (long idx = 0; idx < X.totNnz; ++idx) {
 
@@ -344,7 +345,8 @@ inline int sort_MI_CSF(const Tensor &X, TiledTensor *MTX, int m){
         items.push_back(ap);
     }
 
-    sort(items.begin(), items.end(), sort_pred);
+    // sort(items.begin(), items.end(), sort_pred);
+    boost::sort::sample_sort(items.begin(), items.end(), sort_pred);
 
     for (long idx = 0; idx < MTX[m].totNnz; ++idx) {
 
