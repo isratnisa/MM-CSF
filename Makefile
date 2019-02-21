@@ -19,17 +19,20 @@ all: mttkrp ttm
 ttm: ttm.cu ttm_cpu.o ttm_gpu.o 
 	${NVCC} ${NVCCFLAGS} -o ttm ttm_cpu.o ttm_gpu.o ttm.cu $(NVCCLINKFLAGS)  
 
-mttkrp: mttkrp.cu mttkrp_gpu.h mttkrp_cpu.h mttkrp_cpu.o 
-	${NVCC} ${NVCCFLAGS} -o mttkrp mttkrp_cpu.o mttkrp.cu $(NVCCLINKFLAGS)  
+mttkrp: mttkrp.cu mttkrp_cpu.o mttkrp_gpu.o
+	${NVCC} ${NVCCFLAGS} -o mttkrp mttkrp_cpu.o mttkrp_gpu.o mttkrp.cu $(NVCCLINKFLAGS)  
 
-ttm_cpu.o: ttm_cpu.h ttm_cpu.cpp util.h
-	${CXX} ${CXXFLAGS} -c -o ttm_cpu.o ttm_cpu.cpp
+mttkrp_gpu.o: mttkrp_gpu.h mttkrp_gpu.cu util.h
+	${NVCC} ${NVCCFLAGS} -c -o mttkrp_gpu.o mttkrp_gpu.cu $(NVCCLINKFLAGS)  
+
+mttkrp_cpu.o: mttkrp_cpu.h mttkrp_cpu.cpp util.h
+	${CXX} ${CXXFLAGS} -c -o mttkrp_cpu.o mttkrp_cpu.cpp
 
 ttm_gpu.o: ttm_gpu.h ttm_gpu.cu util.h
 	${NVCC} ${NVCCFLAGS} -c -o ttm_gpu.o ttm_gpu.cu $(NVCCLINKFLAGS)  
 
-mttkrp_cpu.o: mttkrp_cpu.h mttkrp_cpu.cpp util.h
-	${CXX} ${CXXFLAGS} -c -o mttkrp_cpu.o mttkrp_cpu.cpp
+ttm_cpu.o: ttm_cpu.h ttm_cpu.cpp util.h
+	${CXX} ${CXXFLAGS} -c -o ttm_cpu.o ttm_cpu.cpp
 
 clean:
 	rm -rf mttkrp ttm *.o f

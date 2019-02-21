@@ -1190,6 +1190,204 @@ inline int create_TiledHCSR(TiledTensor *TiledX, const Options &Opt, int tile){
 //     return 0;
 // }
 
+inline int compute_reuse(Tensor &X, const Options &Opt){
+
+    int mode2 = X.modeOrder[2];
+    int mode1 = X.modeOrder[1];
+    ITYPE *reuse = (ITYPE *)malloc( X.dims[mode2] * sizeof(ITYPE));
+    ITYPE *reuseBin = (ITYPE *)malloc( Opt.nBin * sizeof(ITYPE));
+    memset(reuse, 0, X.dims[mode2] * sizeof(ITYPE));    
+    memset(reuseBin, 0, Opt.nBin * sizeof(ITYPE));  
+    
+    ITYPE *reuseFbr = (ITYPE *)malloc( X.dims[mode1]  * sizeof(ITYPE));
+    memset(reuseFbr, 0, X.dims[mode1]  * sizeof(ITYPE));   
+    long unqFbr = 0;
+    for(ITYPE slc = 0; slc < X.fbrIdx[0].size(); ++slc) {
+        
+        for (int fbr = X.fbrPtr[0][slc]; fbr < X.fbrPtr[0][slc+1]; ++fbr){ 
+
+            if(reuseFbr[X.fbrIdx[1][fbr]] == 0)
+                unqFbr++;
+
+            reuseFbr[X.fbrIdx[1][fbr]]++; 
+
+            for(ITYPE x = X.fbrPtr[1][fbr]; x < X.fbrPtr[1][fbr+1]; ++x) 
+
+                reuse[X.inds[mode2][x]]++; 
+        }
+    }
+
+    long usedFbr = 0;
+
+    for (int i = 0; i < X.dims[mode1]; ++i) {
+        
+        if(reuseFbr[i] == 0)
+            usedFbr++;
+        
+    }
+    cout << usedFbr << " used fbr " << endl;
+
+    std::vector<ITYPE> UB;
+    std::vector<ITYPE> LB;
+
+    // Bin boundaries
+    for (int i = 0; i < Opt.nBin; i++) {
+        UB.push_back(i);
+        LB.push_back(i);
+    }
+
+    LB[0] = 0;   UB[0] = 2;  // 1 WARP
+    LB[1] = 1;   UB[1] = 6;  // 2 WARP
+    LB[2] = 6;   UB[2] = 11;  // 4 WARP
+    LB[3] = 10;   UB[3] = 21; // 8 WARP
+    LB[4] = 20;   UB[4] = 51;  // 16 WARP = 1 TB
+    LB[5] = 50;   UB[5] = 101; // 32 WARP =2 TB
+    LB[6] = 100;   UB[6] = 501; // 64 WARP =4 TB
+    LB[7] = 500;   UB[7] = 1001; // 128 WARP =8 TB
+    LB[8] = 1000;   UB[8] = 1501;  // 256 WARP = 16 TB
+    LB[9] = 1500;   UB[9] = X.totNnz + 1;  // 512 WARP = 32 TB
+
+    // /* re-use of C indices*/
+    // for (int i = 0; i < X.dims[mode2]; ++i) {
+
+    //     int curReuse =  reuse[i];
+
+    //     for (int bin = 0; bin < Opt.nBin; ++bin){
+
+    //         if (curReuse > LB[bin] && curReuse < UB[bin]) {
+    //             reuseBin[bin]++;
+    //             break;
+    //         }
+    //     }
+    // }
+
+    // if(Opt.verbose){
+    //     for (int bin = 0; bin < Opt.nBin; ++bin)  
+    //         cout << "reuse Bin "<<bin << ": " << reuseBin[bin] << endl;
+    // }
+
+    /* re-use of fibers*/
+
+    memset(reuseBin, 0, Opt.nBin * sizeof(ITYPE));  
+    for (int i = 0; i < X.dims[mode1]; ++i) {
+
+        int curReuse =  reuseFbr[i];
+
+        for (int bin = 0; bin < Opt.nBin; ++bin){
+
+            if (curReuse > LB[bin] && curReuse < UB[bin]) {
+                reuseBin[bin]++;
+                break;
+            }
+        }
+    }
+
+    if(Opt.verbose){
+        for (int bin = 0; bin < Opt.nBin; ++bin)  
+            cout << "reuse Fiber Bin "<<bin << ": " << reuseBin[bin] << endl;
+    }
+    cout << "avg reuse " << unqFbr << " " << X.nFibers << endl;
+}
+inline int compute_reuse(TiledTensor *TiledX, const Options &Opt, int mode){
+
+    int mode2 = TiledX[mode].modeOrder[2];
+    int mode1 = TiledX[mode].modeOrder[1];
+    ITYPE *reuse = (ITYPE *)malloc( TiledX[mode].dims[mode2] * sizeof(ITYPE));
+    ITYPE *reuseBin = (ITYPE *)malloc( Opt.nBin * sizeof(ITYPE));
+    memset(reuse, 0, TiledX[mode].dims[mode2] * sizeof(ITYPE));    
+    memset(reuseBin, 0, Opt.nBin * sizeof(ITYPE));  
+    
+    ITYPE *reuseFbr = (ITYPE *)malloc( TiledX[mode].dims[mode1]  * sizeof(ITYPE));
+    memset(reuseFbr, 0, TiledX[mode].dims[mode1]  * sizeof(ITYPE));   
+    long unqFbr = 0;
+    for(ITYPE slc = 0; slc < TiledX[mode].fbrIdx[0].size(); ++slc) {
+        
+        for (int fbr = TiledX[mode].fbrPtr[0][slc]; fbr < TiledX[mode].fbrPtr[0][slc+1]; ++fbr){ 
+
+            if(reuseFbr[TiledX[mode].fbrIdx[1][fbr]] == 0)
+                unqFbr++;
+            reuseFbr[TiledX[mode].fbrIdx[1][fbr]]++; 
+
+
+            for(ITYPE x = TiledX[mode].fbrPtr[1][fbr]; x < TiledX[mode].fbrPtr[1][fbr+1]; ++x) 
+
+                reuse[TiledX[mode].inds[mode2][x]]++; 
+        }
+    }
+    long usedFbr = 0;
+
+    for(ITYPE slc = 0; slc < TiledX[mode].fbrIdx[0].size(); ++slc) {
+        
+        for (int fbr = TiledX[mode].fbrPtr[0][slc]; fbr < TiledX[mode].fbrPtr[0][slc+1]; ++fbr){ 
+
+            if(reuseFbr[TiledX[mode].fbrIdx[1][fbr]] == 0)
+                usedFbr++;
+        }
+    }
+    cout << usedFbr << " used fbr " << endl;
+
+    std::vector<ITYPE> UB;
+    std::vector<ITYPE> LB;
+
+    // Bin boundaries
+    for (int i = 0; i < Opt.nBin; i++) {
+        UB.push_back(i);
+        LB.push_back(i);
+    }
+
+    LB[0] = 0;   UB[0] = 2;  // 1 WARP
+    LB[1] = 1;   UB[1] = 6;  // 2 WARP
+    LB[2] = 6;   UB[2] = 11;  // 4 WARP
+    LB[3] = 10;   UB[3] = 21; // 8 WARP
+    LB[4] = 20;   UB[4] = 51;  // 16 WARP = 1 TB
+    LB[5] = 50;   UB[5] = 101; // 32 WARP =2 TB
+    LB[6] = 100;   UB[6] = 501; // 64 WARP =4 TB
+    LB[7] = 500;   UB[7] = 1001; // 128 WARP =8 TB
+    LB[8] = 1000;   UB[8] = 1501;  // 256 WARP = 16 TB
+    LB[9] = 1500;   UB[9] = TiledX[mode].totNnz + 1;  // 512 WARP = 32 TB
+
+    // /* re-use of C indices*/
+    // for (int i = 0; i < TiledX[mode].dims[mode2]; ++i) {
+
+    //     int curReuse =  reuse[i];
+
+    //     for (int bin = 0; bin < Opt.nBin; ++bin){
+
+    //         if (curReuse > LB[bin] && curReuse < UB[bin]) {
+    //             reuseBin[bin]++;
+    //             break;
+    //         }
+    //     }
+    // }
+
+    // if(Opt.verbose){
+    //     for (int bin = 0; bin < Opt.nBin; ++bin)  
+    //         cout << "reuse Bin "<<bin << ": " << reuseBin[bin] << endl;
+    // }
+
+    /* re-use of fibers*/
+
+    memset(reuseBin, 0, Opt.nBin * sizeof(ITYPE));  
+    for (int i = 0; i < TiledX[mode].dims[mode1]; ++i) {
+
+        int curReuse =  reuseFbr[i];
+
+        for (int bin = 0; bin < Opt.nBin; ++bin){
+
+            if (curReuse > LB[bin] && curReuse < UB[bin]) {
+                reuseBin[bin]++;
+                break;
+            }
+        }
+    }
+
+    if(Opt.verbose){
+        for (int bin = 0; bin < Opt.nBin; ++bin)  
+            cout << "reuse Fiber Bin "<<bin << ": " << reuseBin[bin] << endl;
+    }
+    cout << "avg reuse " << usedFbr << " " << TiledX[mode].nFibers << endl;
+}
+
 inline int create_fbrLikeSlcInds(Tensor &X, const Options &Opt){
 
     X.fbrLikeSlcInds = (ITYPE *)malloc( X.nFibers * sizeof(ITYPE));

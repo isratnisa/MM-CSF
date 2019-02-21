@@ -7,8 +7,9 @@
 #include <omp.h>
 #include <cuda.h>
 #include "mttkrp_cpu.h"
-#include <bits/stdc++.h>  
 #include "mttkrp_gpu.h" 
+#include <bits/stdc++.h> 
+ 
 using namespace std;
 
 int main(int argc, char* argv[]){ 
@@ -166,11 +167,11 @@ int main(int argc, char* argv[]){
         sort_COOtensor(X);
 
         cout << "Sorted mode: " << X.modeOrder[0] << " " << X.modeOrder[1] << " " <<X.modeOrder[2] << endl;
-
+        
+        create_HCSR(X, Opt); 
+        compute_reuse(X,Opt);
         /* on CPU non tiled */
         if(Opt.impType == 13){ 
-
-            create_HCSR(X, Opt); 
 
             for (int MTTKRPmode = 0; MTTKRPmode < X.ndims; ++MTTKRPmode) {
                     
@@ -195,8 +196,6 @@ int main(int argc, char* argv[]){
         }
        /* on GPU tiled (skipping on tiled gpu due to time constraints)*/
         if(Opt.impType == 14){ 
-
-            create_HCSR(X, Opt);
 
             int tilingMode = X.modeOrder[X.ndims -1];
             Opt.tileSize = (X.dims[tilingMode] + Opt.nTile - 1)/Opt.nTile;  
@@ -272,10 +271,10 @@ int main(int argc, char* argv[]){
         t0 = seconds();
         double start_time = omp_get_wtime();
         omp_set_num_threads(X.ndims);
-        #pragma omp parallel 
+        // #pragma omp parallel 
         {
             int threadnum = omp_get_thread_num(), numthreads = omp_get_num_threads();
-            #pragma omp for 
+            // #pragma omp for 
             for (int m = 0; m < X.ndims; ++m){
                 
                 if(ModeWiseTiledX[m].totNnz > 0){           
@@ -283,6 +282,7 @@ int main(int argc, char* argv[]){
                     create_TiledHCSR(ModeWiseTiledX, Opt, m);
                     create_fbrLikeSlcInds(ModeWiseTiledX, m);
                     make_TiledBin(ModeWiseTiledX, Opt, m);
+                    compute_reuse(ModeWiseTiledX, Opt, m);
                 }
                 cout << threadnum << " " << numthreads << endl;
             }
@@ -323,7 +323,6 @@ int main(int argc, char* argv[]){
         
         /* on GPU */
         else if(Opt.impType == 12){ 
-            cout <<"OFF!" <<endl;
 
             MTTKRP_MIHCSR_GPU(ModeWiseTiledX, U, Opt);
 
