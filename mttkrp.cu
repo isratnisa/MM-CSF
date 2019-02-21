@@ -147,8 +147,9 @@ int main(int argc, char* argv[]){
 
         // TILED HCSR GPU
         else if(Opt.impType == 8){
-             cout << "Sorted mode: " << X.modeOrder[0] << " " << X.modeOrder[1] << " " <<X.modeOrder[2] << endl;
-
+            
+            cout << "Sorted mode: " << X.modeOrder[0] << " " << X.modeOrder[1] << " " <<X.modeOrder[2] << endl;
+            create_fbrLikeSlcInds(TiledX, 0);
             MTTKRP_B_HCSR_GPU(TiledX, U, Opt);
         }
 
@@ -169,7 +170,7 @@ int main(int argc, char* argv[]){
         cout << "Sorted mode: " << X.modeOrder[0] << " " << X.modeOrder[1] << " " <<X.modeOrder[2] << endl;
         
         create_HCSR(X, Opt); 
-        compute_reuse(X,Opt);
+        // compute_reuse(X,Opt);
         /* on CPU non tiled */
         if(Opt.impType == 13){ 
 
@@ -344,8 +345,8 @@ int main(int argc, char* argv[]){
         }
         if(Opt.verbose && Opt.impType == 12)
             cout << "checking only the last mode" << endl;
-        Opt.mode = 0;//X.modeOrder[2];
-        // Opt.mode = 2;//((Opt.impType == 12) ? 2 : Opt.mode);
+        // Opt.mode = 0;//X.modeOrder[2];
+        Opt.mode = 2;//((Opt.impType == 12) ? 2 : Opt.mode);
         int mode = Opt.mode;
         int nr = U[mode].nRows;  
         int nc = U[mode].nCols;
