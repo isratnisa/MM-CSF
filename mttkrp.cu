@@ -171,6 +171,7 @@ int main(int argc, char* argv[]){
         
         create_HCSR(X, Opt); 
         // compute_reuse(X,Opt);
+        compute_reuse_distance(X,Opt);
         /* on CPU non tiled */
         if(Opt.impType == 13){ 
 
@@ -265,7 +266,8 @@ int main(int argc, char* argv[]){
 
         TiledTensor ModeWiseTiledX[X.ndims];
         t0 = seconds();
-        find_hvyslc_allMode(arrX, X, ModeWiseTiledX, Opt);
+        // find_hvyslc_allMode(arrX, X, ModeWiseTiledX, Opt);
+        find_hvyslc_reuseBased(arrX, X, ModeWiseTiledX, Opt);
         // populate_paritions(X, ModeWiseTiledX);
         printf("findHvySlice& populate - time: %.3f sec \n", seconds() - t0);
         
@@ -283,7 +285,7 @@ int main(int argc, char* argv[]){
                     create_TiledHCSR(ModeWiseTiledX, Opt, m);
                     create_fbrLikeSlcInds(ModeWiseTiledX, m);
                     make_TiledBin(ModeWiseTiledX, Opt, m);
-                    compute_reuse(ModeWiseTiledX, Opt, m);
+                    // compute_reuse(ModeWiseTiledX, Opt, m);
                 }
                 cout << threadnum << " " << numthreads << endl;
             }
@@ -346,7 +348,7 @@ int main(int argc, char* argv[]){
         if(Opt.verbose && Opt.impType == 12)
             cout << "checking only the last mode" << endl;
         // Opt.mode = 0;//X.modeOrder[2];
-        Opt.mode = 2;//((Opt.impType == 12) ? 2 : Opt.mode);
+        Opt.mode = ((Opt.impType == 12 ) ? 2 : Opt.mode);
         int mode = Opt.mode;
         int nr = U[mode].nRows;  
         int nc = U[mode].nCols;

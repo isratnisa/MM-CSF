@@ -1190,6 +1190,8 @@ inline int create_TiledHCSR(TiledTensor *TiledX, const Options &Opt, int tile){
 //     return 0;
 // }
 
+/** computes cold misses*/
+
 inline int compute_reuse(Tensor &X, const Options &Opt){
 
     int mode2 = X.modeOrder[2];
@@ -1223,7 +1225,6 @@ inline int compute_reuse(Tensor &X, const Options &Opt){
         
         if(reuseFbr[i] == 0)
             usedFbr++;
-        
     }
     cout << usedFbr << " used fbr " << endl;
 
@@ -1385,8 +1386,126 @@ inline int compute_reuse(TiledTensor *TiledX, const Options &Opt, int mode){
         for (int bin = 0; bin < Opt.nBin; ++bin)  
             cout << "reuse Fiber Bin "<<bin << ": " << reuseBin[bin] << endl;
     }
-    cout << "avg reuse " << usedFbr << " " << TiledX[mode].nFibers << endl;
+    cout << "avg reuse " << usedFbr << " " << unqFbr <<" " << TiledX[mode].nFibers << endl;
 }
+
+inline int compute_reuse_distance(Tensor &X, const Options &Opt){
+
+    int mode1 = X.modeOrder[1];
+    int mode2 = X.modeOrder[2];
+    int inf = X.totNnz;
+    //must be int
+    int *lastLocNnz = (int *)malloc( X.dims[mode2] * sizeof(int));
+    ITYPE *distCntrNnz = (ITYPE *)malloc( X.totNnz * sizeof(ITYPE));
+
+    int *lastLocFbr = (int *)malloc( X.dims[mode1] * sizeof(int));
+    ITYPE *distCntrFbr = (ITYPE *)malloc( X.totNnz * sizeof(ITYPE));
+
+    for (int i = 0; i < X.dims[mode2]; ++i)
+        lastLocNnz[i] = -1;
+    
+    for (int i = 0; i < X.dims[mode1]; ++i)
+        lastLocFbr[i] = -1;
+       
+    memset(distCntrNnz, 0, X.totNnz * sizeof(ITYPE));      
+    memset(distCntrFbr, 0, X.totNnz * sizeof(ITYPE));   
+    
+    ITYPE *distBin = (ITYPE *)malloc( Opt.nBin * sizeof(ITYPE));
+    memset(distBin, 0, Opt.nBin * sizeof(ITYPE));    
+    
+    int distNnz = 0, prevLocNnz, distFbr = 0, prevLocFbr;
+    
+    for(ITYPE slc = 0; slc < X.fbrIdx[0].size(); ++slc) {
+        
+        for (int fbr = X.fbrPtr[0][slc]; fbr < X.fbrPtr[0][slc+1]; ++fbr){ 
+
+            /* collect reuse distance from fiber indices*/
+            prevLocFbr = lastLocFbr[X.fbrIdx[1][fbr]];            
+            if(prevLocFbr == -1)
+                distFbr = inf;
+            else
+                distFbr = fbr - prevLocFbr;
+            distCntrFbr[distFbr]++;
+            lastLocFbr[X.fbrIdx[1][fbr]] = fbr;
+
+            for(ITYPE x = X.fbrPtr[1][fbr]; x < X.fbrPtr[1][fbr+1]; ++x) {
+                
+                /* collect reuse distance from nnz indices*/
+                prevLocNnz = lastLocNnz[X.inds[mode2][x]];
+                if(prevLocNnz == -1)
+                    distNnz = inf;
+                else
+                    distNnz = x - prevLocNnz;
+                distCntrNnz[distNnz]++;
+                lastLocNnz[X.inds[mode2][x]] = x;
+            }   
+        }
+    }
+
+    std::vector<ITYPE> UB;
+    std::vector<ITYPE> LB;
+
+    // Bin boundaries
+    for (int i = 0; i < Opt.nBin; i++) {
+        UB.push_back(i);
+        LB.push_back(i);
+    }
+
+    LB[0] = 0;   UB[0] = 2;  // 1 WARP
+    LB[1] = 1;   UB[1] = 6;  // 2 WARP
+    LB[2] = 6;   UB[2] = 11;  // 4 WARP
+    LB[3] = 10;   UB[3] = 21; // 8 WARP
+    LB[4] = 20;   UB[4] = 51;  // 16 WARP = 1 TB
+    LB[5] = 50;   UB[5] = 101; // 32 WARP =2 TB
+    LB[6] = 100;   UB[6] = 501; // 64 WARP =4 TB
+    LB[7] = 500;   UB[7] = 1001; // 128 WARP =8 TB
+    LB[8] = 1000;   UB[8] = 1501;  // 256 WARP = 16 TB
+    LB[9] = 1500;   UB[9] = X.totNnz + 1;  // 512 WARP = 32 TB
+
+    /* re-use of C indices*/
+    for (int i = 0; i < X.totNnz; ++i) {
+
+        int curDist =  distCntrNnz[i];
+
+        for (int bin = 0; bin < Opt.nBin; ++bin){
+
+            if (curDist > LB[bin] && curDist < UB[bin]) {
+                distBin[bin]++;
+                break;
+            }
+        }
+    }
+
+    // if(Opt.verbose)
+    {
+        for (int bin = 0; bin < Opt.nBin; ++bin)  
+            cout << "nnz Bin "<<bin << ": " << distBin[bin] << endl;
+    }
+
+    /* re-use of fibers*/
+
+    memset(distBin, 0, Opt.nBin * sizeof(ITYPE));  
+    
+    for (int i = 0; i < X.totNnz; ++i) {
+
+        int curDist =  distCntrFbr[i];
+
+        for (int bin = 0; bin < Opt.nBin; ++bin){
+
+            if (curDist > LB[bin] && curDist < UB[bin]) {
+                distBin[bin]++;
+                break;
+            }
+        }
+    }
+
+    // if(Opt.verbose)
+    {
+        for (int bin = 0; bin < Opt.nBin; ++bin)  
+            cout << "reuse Fiber Bin "<<bin << ": " << distBin[bin] << endl;
+    }
+}
+
 
 inline int create_fbrLikeSlcInds(Tensor &X, const Options &Opt){
 
@@ -1716,6 +1835,326 @@ inline int binarySearch(ITYPE *arr, ITYPE l, ITYPE r, ITYPE x) {
     } 
     return -1; 
 }
+inline int find_hvyslc_reuseBased(Tensor *arrX, const Tensor &X, TiledTensor *MTX, Options & Opt){
+ 
+    for (int m = 0; m < arrX[0].ndims; ++m){
+        
+        int sliceMode=arrX[m].modeOrder[0];
+        int fiberMode=arrX[m].modeOrder[1];
+        
+        arrX[m].nnzPerFiber = new ITYPE[arrX[m].nFibers];
+        memset(arrX[m].nnzPerFiber, 0, arrX[m].nFibers * sizeof(ITYPE));     
+
+        arrX[m].nnzPerSlice = new ITYPE[arrX[m].dims[sliceMode]];
+        memset(arrX[m].nnzPerSlice, 0, arrX[m].dims[sliceMode] * sizeof(ITYPE));  
+
+        arrX[m].denseSlcPtr = (ITYPE*)malloc( (arrX[m].dims[sliceMode]+1) * sizeof(ITYPE)); //new ITYPE[arrX[m].dims[sliceMode]];
+        memset(arrX[m].denseSlcPtr, 0, (arrX[m].dims[sliceMode] + 1 ) * sizeof(ITYPE));  
+    }
+
+    /*creating dense slices so that nnz can directly index slices unlike fiber. For
+    fiber it needs to scan all fibers in a slice. */
+
+    for (int m = 0; m < arrX[0].ndims; ++m){
+
+        for(ITYPE slc = 0; slc < arrX[m].fbrIdx[0].size(); ++slc) {
+
+            arrX[m].denseSlcPtr[arrX[m].fbrIdx[0][slc]] = arrX[m].fbrPtr[0][slc];
+                   
+            if(slc == arrX[m].fbrIdx[0].size()-1)
+                arrX[m].denseSlcPtr[arrX[m].fbrIdx[0][slc]+1] = arrX[m].fbrPtr[0][slc];
+            else
+                arrX[m].denseSlcPtr[arrX[m].fbrIdx[0][slc]+1] = arrX[m].fbrPtr[0][slc+1];
+        }
+        
+    }
+
+    // Populate nnz per fiber and nnz per slice 
+    for (int m = 0; m < arrX[0].ndims; ++m) {
+
+        /*dont need vals or last ids*/
+        arrX[m].vals.resize(0);
+        arrX[m].inds[X.modeOrder[2]].resize(0);
+
+        for(ITYPE slc = 0; slc < arrX[m].fbrIdx[0].size(); ++slc) {
+
+            for (int fbr = arrX[m].fbrPtr[0][slc]; fbr < arrX[m].fbrPtr[0][slc+1]; ++fbr){      
+               
+                arrX[m].nnzPerFiber[fbr] = arrX[m].fbrPtr[1][fbr+1] - arrX[m].fbrPtr[1][fbr];
+                arrX[m].nnzPerSlice[arrX[m].fbrIdx[0][slc]] += arrX[m].nnzPerFiber[fbr];
+            }
+        }
+    }
+
+    int threshold = ( X.totNnz / X.dims[0] + X.totNnz / X.dims[1] + X.totNnz / X.dims[2]) / 3;
+    int singleSliceFromAllMode;
+    int thNnzInTile = X.totNnz*1;
+
+
+    /* initialize MICSF tiles */
+    int mode = 0;
+
+    for (int m = 0; m < X.ndims; ++m){
+        bool switchBC = false;
+        ITYPE switchMode;
+        MTX[m].ndims = X.ndims;
+        MTX[m].dims = new ITYPE[MTX[m].ndims];  
+
+        //setting mode order accroding to mode length
+        int  mMode1 = (1 + m) % X.ndims;
+        int  mMode2 = (2 + m) % X.ndims;
+
+        if( X.dims[mMode1] > X.dims[mMode2]) switchBC = true; else false;  
+        
+        for (int i = 0; i < X.ndims; ++i){
+            MTX[m].inds.push_back(std::vector<ITYPE>());  
+            MTX[m].dims[i] = X.dims[i];
+            MTX[mode].totNnz = 0;
+            // MTX[m].modeOrder.push_back((i+m) % X.ndims);
+
+            if(i > 0 && switchBC){
+
+                if(i == 1) switchMode = 2;
+                else if(i == 2) switchMode = 1;
+            }
+            else
+                switchMode = i;       
+            MTX[m].modeOrder.push_back((m + switchMode) % X.ndims);
+        } 
+        // cout << m <<" " <<  MTX[m].modeOrder[0]  << " " <<  MTX[m].modeOrder[1]
+        // <<" " <<  MTX[m].modeOrder[2] << endl;        
+    }    
+
+    /* Populate with nnz for each slice for each mode */
+
+    ITYPE mode0 = 0;//std::min(X.dims[0], X.dims[1], X.dims[2]);
+    ITYPE mode1 = 1;//X.modeOrder[1];
+    ITYPE mode2 = 2;//X.modeOrder[2];
+
+    int *fbrNnz = new int[X.ndims];
+    int *fbrNo = new int[X.ndims];
+    int *fbrSt = new int[X.ndims];
+    int *curIdx = new int[X.ndims];
+    int *sliceNnnz =  new int[X.ndims];
+    std::vector<ITYPE> leftOvers;
+    int tmpSlc;
+
+    bool sameFm0m1 = false, sameFm0m2 = false, sameFm1m2 = false;
+    int fbTh =  Opt.MIfbTh;
+    int slTh =  1;
+    cout << "threshold: " << fbTh <<","<< endl;
+
+    for (int m = 0; m < X.ndims; ++m){
+
+        if(m == 1){
+            if (arrX[m].modeOrder[1] == arrX[m-1].modeOrder[0] && arrX[m].modeOrder[0] == arrX[m-1].modeOrder[1])
+                sameFm0m1 = true;
+        }
+        else if(m == 2){
+            if(arrX[m].modeOrder[1] == arrX[m-2].modeOrder[0] && arrX[m].modeOrder[0] == arrX[m-2].modeOrder[1])
+                sameFm0m2 = true;
+            else if ( arrX[m].modeOrder[1] == arrX[m-1].modeOrder[0] && arrX[m].modeOrder[0] == arrX[m-1].modeOrder[1])
+                sameFm1m2 = true;
+        }
+    }
+    bool casePr = false;
+
+    cout << "fbrnnz replaced by slice nnz" << endl;
+
+    // /* Process NNZs*/
+    for (int idx = 0; idx < X.totNnz; ++idx){
+        
+        bool modeDone = false;
+
+        // if(idx%1000000 == 0 && idx < 10000000 ) 
+        //     casePr = true;
+        // else
+        //      casePr = false;
+   
+        for (int m = 0; m < X.ndims; ++m)
+            curIdx[m] = X.inds[m][idx];
+
+        /*Finding fiber nnz*/
+        for (int m = 0; m < X.ndims; ++m){
+            int nextMode = arrX[m].modeOrder[1];
+
+            sliceNnnz[m] = arrX[m].nnzPerSlice[curIdx[m]] ;//+ arrX[nextMode].nnzPerSlice[curIdx[nextMode]];    ;
+            // fbrNnz[m] =  arrX[nextMode].nnzPerSlice[curIdx[nextMode]];    
+            //change to sameFm*m*
+            if((m == 1 && sameFm0m1) || (m == 2 && sameFm1m2)){
+                fbrNnz[m] = fbrNnz[m - 1];
+                fbrNo[m] = 99999;//curIdx[arrX[m].modeOrder[1]];
+            }
+            else if(m == 2 && sameFm0m2){
+                fbrNnz[m] = fbrNnz[m - 2];
+                fbrNo[m] = 99999;//curIdx[arrX[m].modeOrder[1]];
+            }
+            else{
+                ITYPE result, tmp, tmpCounter = 0;
+                ITYPE idx_j = curIdx[arrX[m].modeOrder[1]];
+                tmpSlc = curIdx[m];
+
+                /*linear search*/
+
+                // for (int fbr = arrX[m].denseSlcPtr[tmpSlc]; fbr < arrX[m].denseSlcPtr[tmpSlc+1]; ++fbr){  
+
+                //     if(arrX[m].fbrIdx[1][fbr] == idx_j){
+                //         fbrNnz[m] = arrX[m].nnzPerFiber[fbr];
+                //         fbrNo[m] = curIdx[arrX[m].modeOrder[1]];
+                //         fbrSt[m] = fbr;
+                //         break;
+                //     }
+                // }
+                /*binary search*/
+                {
+                    int n =  arrX[m].denseSlcPtr[tmpSlc+1] - arrX[m].denseSlcPtr[tmpSlc];//sizeof(arr) / sizeof(arr[0]); 
+                    ITYPE fbr = arrX[m].denseSlcPtr[tmpSlc];  
+                    result = binarySearch1(&(arrX[m].fbrIdx[1][fbr]), 0, n, idx_j); 
+                    tmp = arrX[m].nnzPerFiber[result+fbr];
+                    fbrNnz[m] = tmp;
+                }
+
+                // if(idx%1000000 == 0 && idx < 10000000){
+                //     cout << m<<" mm " << arrX[m].fbrPtr[0][tmpSlc]<<"," << arrX[m].denseSlcPtr[tmpSlc]
+                //     <<" " <<arrX[m].fbrPtr[0][tmpSlc+1]<<"," << arrX[m].denseSlcPtr[tmpSlc+1]
+                //     <<" from linear search " << fbrNnz[m]  <<" binary " << tmp << endl; //<<" hash"  << check
+                // }
+            }
+            // sliceNnnz[m] = fbrNnz[m];
+            // sliceNnnz[m] = arrX[m].nnzPerSlice[curIdx[m]] + 5*fbrNnz[m];
+        }
+        if(casePr) {
+            cout << curIdx[0] << " " << curIdx[1] <<" " << curIdx[2] << endl; 
+            for (int m = 0; m < X.ndims; ++m){
+
+                 cout << m <<" slcNnz: "<<sliceNnnz[m] << " " <<" fbrNnz: (" <<curIdx[m]<<","<<
+                 fbrNo[m]  <<")- " << fbrNnz[m] << endl;
+            }
+        }
+
+        /* if fiber is longer */
+
+        // /*check fiber 0*/
+        if(sameFm0m1 || sameFm0m2 || !modeDone){
+
+            if(casePr) cout << "case 0 true" << endl;
+
+            if(sameFm0m1){
+               // fiberLen 0 and fiberLen 1 are same
+                if ( fbrNnz[0] >=  fbTh * fbrNnz[2]) {
+                    
+                    modeDone = true;
+                    
+                    if(X.dims[0] <=  X.dims[1] ) 
+                        mode = 0;
+                    else 
+                        mode = 1;//arrX[0].modeOrder[1] ;
+                }
+                else if (fbrNnz[2] >=  fbTh * fbrNnz[0]) {
+                    modeDone = true;
+                    mode = 2;
+                }
+            }
+            else if(sameFm0m2){
+
+                if ( fbrNnz[0] >=  fbTh * fbrNnz[1]) {
+
+                     modeDone = true;
+                    
+                     if(X.dims[0] <=  X.dims[2] ) 
+                        mode = 0;
+                    else 
+                        mode = 2;//arrX[0].modeOrder[1] ;
+                }
+                else if (fbrNnz[1] >=  fbTh * fbrNnz[0]) {
+                    modeDone = true;
+                    mode = 1;
+                }
+            }
+        }
+
+        else if ( fbrNnz[0] >=  fbTh * std::max(fbrNnz[1] , fbrNnz[2]) && !modeDone) {
+            // add a alice condition maybe 2 * fbth
+            if(casePr ) cout << "case 1 true" << endl;
+            modeDone = true;
+            mode = 0;
+        }
+
+        /*check fiber 1*/
+        if(sameFm1m2 && !modeDone){ //m0m1 already taken care of in prev if
+
+            if(casePr ) cout << "case 2 true" << endl;
+           
+            if ( fbrNnz[1] >=  fbTh * fbrNnz[0]) {
+                
+                modeDone = true;
+                
+                 if(X.dims[1] <=  X.dims[2] )  
+                    mode = 1;
+                else 
+                    mode = 2;//arrX[1].modeOrder[1] ;
+            }
+            else if (fbrNnz[0] >=  fbTh * fbrNnz[1]) {
+                modeDone = true;
+                mode = 0;
+            }           
+        }
+
+        else if ( fbrNnz[1] >=  fbTh * std::max(fbrNnz[0] , fbrNnz[2]) && !modeDone) {
+            modeDone = true;
+            mode = 1;
+            if(casePr ) cout << "case 3 true" << endl;
+        }
+
+        /*check fibe 2*/
+        //sameFm0m2, sameFm1m2 are taken care of
+        if ( fbrNnz[2] >=  fbTh * std::max(fbrNnz[0] , fbrNnz[1]) && !modeDone) {
+            mode = 2;
+            modeDone = true;
+            if(casePr ) cout << "case 5 true" << endl;           
+        }
+
+        /* if slice is longer */
+
+
+        if ( sliceNnnz[2] >=  slTh * std::max(sliceNnnz[0], sliceNnnz[1]) && !modeDone) { 
+            mode = 2;//mode1;
+            modeDone = true;
+            if(casePr ) cout << "case 7 true" << endl;
+        }
+
+        else if ( sliceNnnz[1] >=  slTh * std::max(sliceNnnz[0], sliceNnnz[2]) && !modeDone)    { 
+            mode = 1;//mode0;
+            modeDone = true;
+            if(casePr ) cout << "case 6 true" << endl;
+        }
+
+        else if ( sliceNnnz[0] >=  slTh * std::max(sliceNnnz[1], sliceNnnz[2])  && !modeDone)  {   
+            modeDone = true;
+            mode = 0;//mode2;
+            if(casePr ) cout << "case 8 true" << endl;
+        }
+
+        if(!modeDone)
+            mode = -1;
+    
+        /*populate new partitions*/
+        if(mode > -1){
+            for (int i = 0; i < X.ndims; ++i)  {
+                MTX[mode].inds[i].push_back(X.inds[i][idx]); 
+            }
+            MTX[mode].vals.push_back(X.vals[idx]); 
+            MTX[mode].totNnz = MTX[mode].vals.size();
+        }
+        if(casePr) 
+            cout << "selected mode: " << mode << endl;
+
+    }
+
+    for (int m = 0; m < X.ndims; ++m)
+        MTX[m].totNnz = MTX[m].vals.size();
+}
+
 inline int find_hvyslc_allMode(Tensor *arrX, const Tensor &X, TiledTensor *MTX, Options & Opt){
  
     for (int m = 0; m < arrX[0].ndims; ++m){
