@@ -1334,7 +1334,7 @@ int MTTKRP_B_HCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 	
 	/*choosing kernel type:
 	false: B-CSF- IPDPS work, true: parallelism at fiber level, call slc_atomic_fbrlblpar function*/
-	bool slcAtomicFbrLvlPar =  true;
+	bool slcAtomicFbrLvlPar =  false;
 
 	/* Allocate and memcpy GPU memory */
 	//Tensor
@@ -1603,7 +1603,7 @@ int MTTKRP_B_HCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 
 int MTTKRP_ONE_HCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 	
-	bool performMTTKRPMode = true, performMTTKRPnMode = false, performMTTKRPnnMode = false;
+	bool performMTTKRPMode = true, performMTTKRPnMode = true, performMTTKRPnnMode = true;
 	
 	/* Allocate and memcpy GPU memory */
 	//Tensor
