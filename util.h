@@ -1,7 +1,7 @@
 #ifndef UTIL_H
 #define UTIL_H
 
-#define DTYPE double
+#define DTYPE float
 #define ITYPE size_t
 
 #include <vector>
