@@ -38,14 +38,24 @@ int MTTKRP_COO_CPU(const Tensor &X, Matrix *U, const Options &Opt){
 }
 
 int MTTKRP_COO_CPU_4D(const Tensor &X, Matrix *U, const Options &Opt){
-
+    
+    int *curMode = new int [X.ndims];
     ITYPE R = Opt.R;
     // #pragma omp parallel for //reduction(+:U[0].vals[:R])
-    ITYPE mode0 = X.modeOrder[0];
-    ITYPE mode1 = X.modeOrder[1];
-    ITYPE mode2 = X.modeOrder[2];
-    ITYPE mode3 = X.modeOrder[3];
-    
+    // ITYPE mode0 = X.modeOrder[0];
+    // ITYPE mode1 = X.modeOrder[1];
+    // ITYPE mode2 = X.modeOrder[2];
+    // ITYPE mode3 = X.modeOrder[3];
+
+    for (int m = 0; m < X.ndims; ++m)
+        curMode[m] = (m + Opt.mode) % X.ndims;
+
+
+    ITYPE mode0 = curMode[0];
+    ITYPE mode1 = curMode[1];
+    ITYPE mode2 = curMode[2];
+    ITYPE mode3 = curMode[3];
+
     for(ITYPE x=0; x<X.totNnz; ++x) {
 
         DTYPE tmp_val = 0;

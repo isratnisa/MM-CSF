@@ -1,7 +1,7 @@
 #ifndef UTIL_H
 #define UTIL_H
 
-#define DTYPE float
+#define DTYPE double
 #define ITYPE size_t
 
 #include <vector>
@@ -168,6 +168,63 @@ public:
     }
 };
 
+inline int order_tensormode(Tensor &X, const Options &Opt){
+
+    int *sortMode = new int[X.ndims]; //sorted according to mode length
+    int *natMode = new int[X.ndims]; // natural ordering
+    bool *taken = new bool[X.ndims];
+    int *sortModeLen = new int[X.ndims];
+    ITYPE switchMode = 0;
+    bool switchBC =  false;
+    bool natOrdering = false; // modeOrdering not activated
+
+    for (int m = 0; m < X.ndims; ++m){
+        natMode[m] = (m + Opt.mode) % X.ndims;
+        sortModeLen[m] = X.dims[natMode[m]];
+        taken[m] = false;
+    }
+
+    if(natOrdering){
+        for (int i = 0; i < X.ndims; ++i)
+            X.modeOrder.push_back(natMode[i]);
+    }
+    else{
+        /*linear sort of dimension length*/   
+        int tmp, swapped;
+
+        for (int i = 1; i < X.ndims; i++) {
+
+            for (int j =i+1; j < X.ndims; j++) {
+                
+                if ( sortModeLen[i] > sortModeLen[j]) 
+                    std::swap(sortModeLen[i],sortModeLen[j]);
+            }
+        }
+
+        sortMode[0] = Opt.mode; 
+        taken[Opt.mode] = true;
+
+        for (int i = 1; i < X.ndims; i++) {
+
+            for (int j = 0; j < X.ndims; j++) {
+                
+                if( sortModeLen[i] == X.dims[j] && !taken[j]){
+                    sortMode[i] = j;
+                    taken[j] = true;
+                    break;
+                }
+            }
+        }
+
+        for (int i = 0; i < X.ndims; ++i)    
+            X.modeOrder.push_back(sortMode[i]);
+    }
+
+    for (int i = 0; i < X.ndims; ++i)
+        cout << X.modeOrder[i] << " ";
+    cout << " not using swbc " << endl;
+}
+
 inline int load_tensor(Tensor &X, const Options &Opt){
     
     if(Opt.verbose)
@@ -176,9 +233,6 @@ inline int load_tensor(Tensor &X, const Options &Opt){
     string filename = Opt.inFileName;
     ITYPE index;
     DTYPE vid=0;
-
-    ITYPE switchMode = 0;
-    bool switchBC =  false;
 
     ifstream fp(filename); 
 
@@ -196,29 +250,8 @@ inline int load_tensor(Tensor &X, const Options &Opt){
         X.inds.push_back(std::vector<ITYPE>());
     }
 
-    // cout << "mode sort is off!" << endl;
-    // fix it:: hard coded for 3D tensor
-    int mode1 = (1 + Opt.mode) % X.ndims;   
-    int mode2 = (2 + Opt.mode) % X.ndims;
-
-    if( X.dims[mode1] > X.dims[mode2]) switchBC = true;
-
-    for (int i = 0; i < X.ndims; ++i){
-        
-        // mode 0 never switches
-        if(i > 0 && switchBC){
-
-            if(i == 1)
-                switchMode = 2;
-            else if(i == 2)
-                switchMode = 1;
-        }
-        else
-            switchMode = i;       
-        X.modeOrder.push_back((switchMode + Opt.mode) % X.ndims);
-    }
-
     while(fp >> index) {
+        
         X.inds[0].push_back(index-1);
         for (int i = 1; i < X.ndims; ++i)
         {      
@@ -230,6 +263,8 @@ inline int load_tensor(Tensor &X, const Options &Opt){
 
     }
     X.totNnz = X.vals.size();
+
+    order_tensormode(X, Opt);
 
     return 0;
 }
@@ -271,17 +306,27 @@ inline int init_tensor(Tensor *arrX, Tensor &X0, int mode){
     }
 }
 
-inline bool sort_pred(tuple <ITYPE, ITYPE, ITYPE, DTYPE> left, 
+inline bool sort_pred_3D(tuple <ITYPE, ITYPE, ITYPE, DTYPE> left, 
                   tuple <ITYPE, ITYPE, ITYPE, DTYPE> right) {
+
+    if (get<0>(left) != get<0>(right)) 
+        return (get<0>(left) < get<0>(right));
+    
+    return (get<1>(left) < get<1>(right));
+    
+}
+
+inline bool sort_pred_4D(tuple <ITYPE, ITYPE, ITYPE, ITYPE, DTYPE> left, 
+                  tuple <ITYPE, ITYPE, ITYPE, ITYPE, DTYPE> right) {
     // return get<0>(left) < get<0>(right);
 
     if (get<0>(left) != get<0>(right)) 
         return (get<0>(left) < get<0>(right));
     
-    // if (get<1>(left) != get<1>(right)) 
+    if (get<1>(left) != get<1>(right)) 
         return (get<1>(left) < get<1>(right));
       
-    // return (get<2>(left) < get<2>(right));
+    return (get<2>(left) < get<2>(right));
 }
 
 inline int sort_COOtensor(Tensor &X){
@@ -289,27 +334,59 @@ inline int sort_COOtensor(Tensor &X){
     const ITYPE mode0 = X.modeOrder[0];
     const ITYPE mode1 = X.modeOrder[1];
     const ITYPE mode2 = X.modeOrder[2];
+    ITYPE mode3;
+    if(X.ndims == 4)
+        mode3 = X.modeOrder[3];
 
-    vector < tuple <ITYPE, ITYPE, ITYPE, DTYPE> > items;
-    tuple <ITYPE, ITYPE, ITYPE, DTYPE> ap;
+    if(X.ndims == 3){
 
-    for (long idx = 0; idx < X.totNnz; ++idx) { 
+        vector < tuple <ITYPE, ITYPE, ITYPE, DTYPE> > items;
+        tuple <ITYPE, ITYPE, ITYPE, DTYPE> ap;
 
-        ap=std::make_tuple(X.inds[mode0][idx], X.inds[mode1][idx], X.inds[mode2][idx], X.vals[idx]); 
-        items.push_back(ap);
-    }
+        for (long idx = 0; idx < X.totNnz; ++idx) { 
+            
+            ap=std::make_tuple(X.inds[mode0][idx], X.inds[mode1][idx], X.inds[mode2][idx], X.vals[idx]); 
+            
+            items.push_back(ap);
+        }
+        // std::sort(std::parallel::par, items.begin(), items.end(), sort_pred);
+        // std::sort(items.begin(), items.end(), sort_pred);
+        boost::sort::sample_sort(items.begin(), items.end(), sort_pred_3D);
 
-    // std::sort(std::parallel::par, items.begin(), items.end(), sort_pred);
-    // std::sort(items.begin(), items.end(), sort_pred);
-    boost::sort::sample_sort(items.begin(), items.end(), sort_pred);
-
-    for (long idx = 0; idx < X.totNnz; ++idx) {
+        for (long idx = 0; idx < X.totNnz; ++idx) {
 
             X.inds[mode0][idx] = get<0>(items[idx]);
             X.inds[mode1][idx] = get<1>(items[idx]);
             X.inds[mode2][idx] = get<2>(items[idx]);
             X.vals[idx] = get<3>(items[idx]);
+        }
     }
+
+    else if(X.ndims == 4){
+
+        vector < tuple <ITYPE, ITYPE, ITYPE, ITYPE, DTYPE> > items;
+        tuple <ITYPE, ITYPE, ITYPE, ITYPE, DTYPE> ap;
+
+        for (long idx = 0; idx < X.totNnz; ++idx) { 
+            
+            ap=std::make_tuple(X.inds[mode0][idx], X.inds[mode1][idx], X.inds[mode2][idx], X.inds[mode3][idx], X.vals[idx]); 
+
+            items.push_back(ap);
+        }
+        boost::sort::sample_sort(items.begin(), items.end(), sort_pred_4D);
+
+        for (long idx = 0; idx < X.totNnz; ++idx) {
+
+            X.inds[mode0][idx] = get<0>(items[idx]);
+            X.inds[mode1][idx] = get<1>(items[idx]);
+            X.inds[mode2][idx] = get<2>(items[idx]);           
+            X.inds[mode3][idx] = get<3>(items[idx]);
+            X.vals[idx] = get<4>(items[idx]);
+        }
+    }
+    
+
+
     
     // ofstream of("sorted.txt");
 
@@ -346,7 +423,7 @@ inline int sort_MI_CSF(const Tensor &X, TiledTensor *MTX, int m){
     }
 
     // sort(items.begin(), items.end(), sort_pred);
-    boost::sort::sample_sort(items.begin(), items.end(), sort_pred);
+    boost::sort::sample_sort(items.begin(), items.end(), sort_pred_3D);
 
     for (long idx = 0; idx < MTX[m].totNnz; ++idx) {
 
