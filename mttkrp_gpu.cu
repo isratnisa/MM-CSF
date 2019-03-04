@@ -712,6 +712,133 @@ __global__ void mttkrp_MIHCSR_kernel_slc_atomic_fbrLvlPar(DTYPE * vals, ITYPE *f
 	}
 }
 
+// CUDA fbr atomic sing slcLikeFbr
+__global__ void mttkrp_MIHCSR_kernel_slc_atomic_fbrLvlPar_4D(DTYPE * vals, ITYPE *fbrLikeSlcInds, ITYPE *dInds3, 
+	ITYPE *fbrPtr0, ITYPE *fbrPtr1, ITYPE *fbrIdx1, ITYPE *fbrPtr2, ITYPE *fbrIdx2, unsigned int nFibers, DTYPE *dU0, DTYPE * dU1, DTYPE *dU2, DTYPE *dU3, 
+	ITYPE	mode, ITYPE R, ITYPE warpPerSlice, int logOfWPC, int fbrPerWarp, int logOfFPW){
+
+	unsigned int tId = threadIdx.x;
+	unsigned int laneId = tId & 31;
+	unsigned int gId = (blockIdx.x * blockDim.x + tId);
+	unsigned int workId = (tId & ((1 << (5 + logOfWPC)) - 1)) >> 5;  //tId >> 5; //tId >> 5;//
+	unsigned int fbrS = (gId >> (5 + logOfWPC)) << logOfFPW; // 5: minimum 1 WARP (2^5) // blockIdx.x ;//
+	DTYPE tmp = 0, tmp_val, tmp2= 0;
+		              	              
+	if(fbrS < nFibers - 1){ 	    
+		
+		tmp_val = 0;
+		bool diffFiber = false;
+		unsigned int idx0;
+
+		for (int fr = 0; fr < fbrPerWarp && (fbrS+fr) < (nFibers - 1); ++fr){
+
+			diffFiber = false;
+			unsigned int idx1 = fbrIdx1[fbrS+fr];// dInds1[fbrPtr1[fbr]];  
+			idx0 = fbrLikeSlcInds[fbrS+fr];//slc;  
+ 			tmp = 0;
+
+			for (int fbr = fbrPtr1[fbrS+fr] + workId; fbr < fbrPtr1[fbrS+fr+1]; fbr+=warpPerSlice){
+				ITYPE idx2 = fbrIdx2[fbr];
+				tmp_val = 0;
+			 
+		        for(unsigned int x = fbrPtr2[fbr]; x < fbrPtr2[fbr+1]; x++) {
+
+			        unsigned int idx3 = dInds3[x];                    
+
+		            for(unsigned int r=laneId; r<R; r+=32) {
+		                tmp_val += vals[x] * dU3[idx3 * R + r]; //2MR   
+		            }       
+		        }
+		        	
+	        	for(unsigned int r=laneId; r<R; r+=32) { 
+	        		tmp += tmp_val * dU2[idx2 * R + r] ;
+	        	} 
+	        }
+	       	for(unsigned int r=laneId; r<R; r+=32) { 
+	       		tmp2 += tmp * dU1[idx1 * R + r] ;
+	       	} 
+
+        	if(fbrLikeSlcInds[fbrS+fr] != fbrLikeSlcInds[fbrS+fr+1]) {
+
+        		diffFiber = true;
+	        	for(unsigned int r=laneId; r<R; r+=32) { 
+	        		atomicAdd(&dU0[idx0 * R + r], tmp2); //2PR
+	        	} 
+        		tmp2 = 0;
+        	}
+        }
+
+        if(!diffFiber) {  
+	        for(unsigned int r=laneId; r<R; r+=32) 
+	        	atomicAdd(&dU0[idx0 * R + r], tmp2); //2PR	         
+        }  
+	}
+}
+
+// // CUDA fbr atomic sing slcLikeFbr
+// __global__ void mttkrp_MIHCSR_kernel_slc_atomic_fbrLvlPar_4D_new(DTYPE * vals, ITYPE *fbrLikeSlcInds, ITYPE *dInds3, 
+// 	ITYPE *fbrPtr0, ITYPE *fbrPtr1, ITYPE *fbrIdx1, ITYPE *fbrPtr2, ITYPE *fbrIdx2, unsigned int nFibers, DTYPE *dU0, DTYPE * dU1, DTYPE *dU2, DTYPE *dU3, 
+// 	ITYPE	mode, ITYPE R, ITYPE warpPerSlice, int logOfWPC, int fbrPerWarp, int logOfFPW){
+
+// 	unsigned int tId = threadIdx.x;
+// 	unsigned int laneId = tId & 31;
+// 	unsigned int gId = (blockIdx.x * blockDim.x + tId);
+// 	unsigned int workId = (tId & ((1 << (5 + logOfWPC)) - 1)) >> 5;  //tId >> 5; //tId >> 5;//
+// 	unsigned int fbrS = (gId >> (5 + logOfWPC)) << logOfFPW; // 5: minimum 1 WARP (2^5) // blockIdx.x ;//
+// 	DTYPE tmp = 0, tmp_val, tmp2= 0;
+		              	              
+// 	if(fbrS < nFibers - 1){ 	    
+		
+// 		tmp_val = 0;
+// 		bool diffFiber = false;
+// 		unsigned int idx0;
+
+// 		diffFiber = false;
+// 		unsigned int idx1 = fbrIdx1[fbrS];// dInds1[fbrPtr1[fbr]];  
+// 		idx0 = fbrLikeSlcInds[fbrS];//slc;  
+// 		tmp = 0;
+
+// 		for (int fbr = fbrPtr1[fbrS]; fbr < fbrPtr1[fbrS]; fbr++){
+
+// 			for (int fr = 0; fr < fbrPerWarp && (fbr+fr) < fbrPtr1[fbrS]; ++fr){
+
+// 				ITYPE idx2 = fbrIdx2[fbr+fr];
+// 				tmp_val = 0;
+
+// 				for(unsigned int x = fbrPtr2[fbr+fr] + workId; x < fbrPtr2[fbr+fr+1]; x+=warpPerSlice) {
+
+// 			        unsigned int idx3 = dInds3[x];                    
+
+// 		            for(unsigned int r=laneId; r<R; r+=32) {
+// 		                tmp_val += vals[x] * dU3[idx3 * R + r]; //2MR   
+// 		            }       
+// 		        }
+		        	
+// 	        	for(unsigned int r=laneId; r<R; r+=32) { 
+// 	        		tmp += tmp_val * dU2[idx2 * R + r] ;
+// 	        	} 
+// 	        }
+// 	       	for(unsigned int r=laneId; r<R; r+=32) { 
+// 	       		tmp2 += tmp * dU1[idx1 * R + r] ;
+// 	       	} 
+// 	       	// have to create a slc inds for fbrS
+//         	if(fbrLikeSlcInds[fbrS+fr] != fbrLikeSlcInds[fbrS+fr+1]) {
+
+//         		diffFiber = true;
+// 	        	for(unsigned int r=laneId; r<R; r+=32) { 
+// 	        		atomicAdd(&dU0[idx0 * R + r], tmp2); //2PR
+// 	        	} 
+//         		tmp2 = 0;
+//         	}
+//         }
+
+//         if(!diffFiber) {  
+// 	        for(unsigned int r=laneId; r<R; r+=32) 
+// 	        	atomicAdd(&dU0[idx0 * R + r], tmp2); //2PR	         
+//         }  
+// 	}
+// }
+
 // CUDA kernel call to do HCSR MTTKRP 
 __global__ void mttkrp_MIHCSR_kernel_smllBin_fbr_atomic(DTYPE * vals, ITYPE *dfbrIdx0, ITYPE *dSlcMapperBin, ITYPE *dInds2, ITYPE *fbrPtr0,
 	ITYPE *fbrPtr1, ITYPE *fbrIdx1, unsigned int nSlices, DTYPE *dU0, DTYPE * dU1, DTYPE *dU2, 
@@ -1334,7 +1461,7 @@ int MTTKRP_B_HCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 	
 	/*choosing kernel type:
 	false: B-CSF- IPDPS work, true: parallelism at fiber level, call slc_atomic_fbrlblpar function*/
-	bool slcAtomicFbrLvlPar =  false;
+	bool slcAtomicFbrLvlPar =  true;
 
 	/* Allocate and memcpy GPU memory */
 	//Tensor
@@ -1507,7 +1634,7 @@ int MTTKRP_B_HCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 			dFbrLoc2 += ((TiledX[0].ndims == 4) ? TiledX[tile - 1].fbrPtr[2].size() : 0) ;
 		}
 
-		BLOCKSIZE = 512;
+		BLOCKSIZE = (( slcAtomicFbrLvlPar == true) ? 128 : 512) ;
 		dim3 block(BLOCKSIZE, 1, 1), grid(1, 1, 1);
 
 		int smallBinEndsAt = 5;
@@ -1524,10 +1651,16 @@ int MTTKRP_B_HCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 		double t0 = seconds();
 		cuda_timer_start(start);
 		
-		if(slcAtomicFbrLvlPar)
-			mttkrp_MIHCSR_kernel_slc_atomic_fbrLvlPar<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dFbrLikeSlcInds + dFbrLoc, 
+		if(slcAtomicFbrLvlPar){
+			if(TiledX[0].ndims == 3)
+				mttkrp_MIHCSR_kernel_slc_atomic_fbrLvlPar<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dFbrLikeSlcInds + dFbrLoc, 
 				dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[tile].nFibers, 
 				dU0, dU1, dU2, Opt.mode, Opt.R, warpPerFbr, logOfWarpPerFbr, fbrPerWarp, logOfFbrPerWarp);
+			else
+				mttkrp_MIHCSR_kernel_slc_atomic_fbrLvlPar_4D<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dFbrLikeSlcInds + dFbrLoc, 
+				dInds3 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, dFbrPtr2 + dFbrLoc2, dFbrIdx2 + dFbrLoc2, TiledX[tile].nFibers, 
+				dU0, dU1, dU2, dU3, Opt.mode, Opt.R, warpPerFbr, logOfWarpPerFbr, fbrPerWarp, logOfFbrPerWarp);
+		}
 		
 		else{
 
