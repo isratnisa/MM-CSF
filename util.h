@@ -143,6 +143,7 @@ public:
     std::string m0 = "012";
     std::string m1 = "120";
     std::string m2 = "201";
+    bool natOrdering = false;
     ITYPE fbrThreashold = 99999999;
 
     void print() {
@@ -174,9 +175,6 @@ inline int order_tensormode(Tensor &X, const Options &Opt){
     int *natMode = new int[X.ndims]; // natural ordering
     bool *taken = new bool[X.ndims];
     int *sortModeLen = new int[X.ndims];
-    ITYPE switchMode = 0;
-    bool switchBC =  false;
-    bool natOrdering = false; // modeOrdering not activated
 
     for (int m = 0; m < X.ndims; ++m){
         natMode[m] = (m + Opt.mode) % X.ndims;
@@ -184,9 +182,10 @@ inline int order_tensormode(Tensor &X, const Options &Opt){
         taken[m] = false;
     }
 
-    if(natOrdering){
+    if(Opt.natOrdering){
         for (int i = 0; i < X.ndims; ++i)
             X.modeOrder.push_back(natMode[i]);
+        cout << "Natural mode ordering " << endl;
     }
     else{
         /*linear sort of dimension length*/   
@@ -220,9 +219,10 @@ inline int order_tensormode(Tensor &X, const Options &Opt){
             X.modeOrder.push_back(sortMode[i]);
     }
 
+    cout << "mode ordering: ";
     for (int i = 0; i < X.ndims; ++i)
         cout << X.modeOrder[i] << " ";
-    cout << " not using swbc " << endl;
+    cout << endl;
 }
 
 inline int load_tensor(Tensor &X, const Options &Opt){
@@ -2968,7 +2968,7 @@ inline int randomize_mats(const Tensor &X, Matrix *U, const Options &Opt){
         srand48(0L);
         for(long r = 0; r < U[mode].nRows; ++r){
             for(long c = 0; c < U[mode].nCols; ++c) // or u[mode].nCols 
-                U[mode].vals[r * U[mode].nCols + c] =  mode + .5;//1.5 * (mode+1);;// * drand48(); //1 ;//; //
+                U[mode].vals[r * U[mode].nCols + c] = mode + .5;//1.5 * (mode+1);;// .1 * drand48(); //1 ;//; //
         }
     }
     return 0;
@@ -3003,7 +3003,7 @@ inline void print_matrix(Matrix *U, ITYPE mode){
     
     cout << U[mode].nRows << " x " << U[mode].nCols << " matrix" << endl;
     cout << std::fixed;
-    // for (int i = 0; i < U[mode].nRows; ++i)
+    // for (int i = 0; i < 5; ++i)
     for (int i = U[mode].nRows-5; i <  U[mode].nRows; ++i)
     {
         // for (int j = 0; j < U[mode].nCols; ++j)

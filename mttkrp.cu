@@ -165,13 +165,11 @@ int main(int argc, char* argv[]){
 
         if(Opt.verbose)
             cout << "Starting sameCSF: MTTKRP on all modes using same CSF" << endl;
-        sort_COOtensor(X);
-
-        cout << "Sorted mode: " << X.modeOrder[0] << " " << X.modeOrder[1] << " " <<X.modeOrder[2] << endl;
         
+        sort_COOtensor(X); 
         create_HCSR(X, Opt); 
         // compute_reuse(X,Opt);
-        compute_reuse_distance(X,Opt);
+        // compute_reuse_distance(X,Opt);
         /* on CPU non tiled */
         if(Opt.impType == 13){ 
 
@@ -348,7 +346,7 @@ int main(int argc, char* argv[]){
         if(Opt.verbose && Opt.impType == 12)
             cout << "checking only the last mode" << endl;
         // Opt.mode = 0;//X.modeOrder[2];
-        Opt.mode = ((Opt.impType == 12 ) ? 2 : Opt.mode);
+        Opt.mode = ((Opt.impType == 12 || Opt.impType == 14 ) ? 2 : Opt.mode);
         int mode = Opt.mode;
         int nr = U[mode].nRows;  
         int nc = U[mode].nCols;
