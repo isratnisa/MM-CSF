@@ -269,7 +269,7 @@ int main(int argc, char* argv[]){
         t0 = seconds();
         //mm_partition_allMode(arrX, X, ModeWiseTiledX, Opt);
         mm_partition_reuseBased(arrX, X, ModeWiseTiledX, Opt);
-        // populate_paritions(X, ModeWiseTiledX);
+        populate_paritions(X, ModeWiseTiledX);
         printf("mm_partition & populate - time: %.3f sec \n", seconds() - t0);
         
         t0 = seconds();
