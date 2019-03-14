@@ -14,17 +14,17 @@ out=/home/nisa/Tensor_operations/SpMTTKRP_private/4d_sorted.txt
 # mode 0
 
 echo "mode 0" >> $out
-for dataset in uber_sorted0123.tns nips_sorted0123.tns chicago-crime-comm_sorted0123.tns flickr-4d_sorted0123.tns; do
+for dataset in nips_sorted0123.tns uber_sorted0123.tns ; do
 	
 	for mode in 0 1 2 3; do
-		log1=`$bin -i $path/$dataset -m $mode -R 32 -t 8 -f 128 -c 1 | perl -p -e 's/\n//'`
-		echo "$dataset,$mode,$log1" >> $out
+		log1=`$bin -i $path/$dataset -m $mode -R 32 -t 12 -f 128 -c 1 `
+		echo "$dataset,$mode,$log1"
 	done
 
-	for mode in 0 1 2 3; do
-		log1=`$bin -i $path/$dataset -m $mode -R 32 -t 10 -f 128 -c 1 | perl -p -e 's/\n//'`
-		echo "$dataset,$mode,$log1" >> $out
-	done
+	# for mode in 0 1 2 3; do
+	# 	log1=`$bin -i $path/$dataset -m $mode -R 32 -t 10 -f 128 -c 1 | perl -p -e 's/\n//'`
+	# 	echo "$dataset,$mode,$log1" >> $out
+	# done
 done
 
 # # # # mode 1

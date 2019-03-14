@@ -26,7 +26,8 @@ int main(int argc, char* argv[]){
     Matrix *U = new Matrix[X.ndims]; 
     create_mats(X, U, Opt, false);
     randomize_mats(X, U, Opt);
-    zero_mat(X, U, Opt.mode);
+    // if(Opt.impType != 12 && Opt.impType != 14 )
+    //     zero_mat(X, U, Opt.mode); // not sure about the cpu code 
 
     if(Opt.verbose)
         cout << endl << "Starting MTTKRP..." << endl;  
@@ -204,6 +205,7 @@ int main(int argc, char* argv[]){
                 cout << "Number of tiles ("<< Opt.nTile << ") should be as minimum as K's dimension (" << X.dims[tilingMode]  << "). Exiting."<< endl ;
                 exit(0);
             }
+            // print_HCSRtensor_4D(X);
 
             // split X into tiles based on K indices
             make_KTiling(X, TiledX, Opt);
@@ -214,7 +216,8 @@ int main(int argc, char* argv[]){
                 if(TiledX[tile].totNnz > 0){
                     create_TiledHCSR(TiledX, Opt, tile);
                     create_fbrLikeSlcInds(TiledX, tile);
-                // print_TiledHCSRtensor(TiledX, tile);
+                    // print_COOtensor(X);
+                    // print_TiledHCSRtensor(TiledX, tile);
                 }
             }  
 
@@ -245,15 +248,15 @@ int main(int argc, char* argv[]){
 
             for (int m = 0; m < X.ndims; ++m){
             
-                init_tensor(arrX, X, m);
+                init_tensor(arrX, X, Opt, m);
                 if(m!= Opt.mode) //already sorted
                     t0 = seconds();
                     sort_COOtensor(arrX[m]);
-                    printf("sort - mode %d - %.3f\n", m, seconds() - t0);
+                    // printf("sort - mode %d - %.3f\n", m, seconds() - t0);
                 
                 t0 = seconds();
                 create_HCSR(arrX[m], Opt); 
-                printf("creat CSF - mode %d - %.3f\n", m, seconds() - t0);
+                // printf("creat CSF - mode %d - %.3f\n", m, seconds() - t0);
                 
                 // get_nnzPerFiberData(arrX[m]); //merge with createCSF
                 // create_hashtable(arrX[m]);
@@ -264,10 +267,10 @@ int main(int argc, char* argv[]){
 
         TiledTensor ModeWiseTiledX[X.ndims];
         t0 = seconds();
-        // find_hvyslc_allMode(arrX, X, ModeWiseTiledX, Opt);
-        find_hvyslc_reuseBased(arrX, X, ModeWiseTiledX, Opt);
+        //mm_partition_allMode(arrX, X, ModeWiseTiledX, Opt);
+        mm_partition_reuseBased(arrX, X, ModeWiseTiledX, Opt);
         // populate_paritions(X, ModeWiseTiledX);
-        printf("findHvySlice& populate - time: %.3f sec \n", seconds() - t0);
+        printf("mm_partition & populate - time: %.3f sec \n", seconds() - t0);
         
         t0 = seconds();
         double start_time = omp_get_wtime();
@@ -343,19 +346,16 @@ int main(int argc, char* argv[]){
             cout << "Already running COO seq on CPU!" << endl; 
             exit(0);
         }
-        if(Opt.verbose && Opt.impType == 12)
+        if(Opt.verbose && (Opt.impType == 12 || Opt.impType == 14))
             cout << "checking only the last mode" << endl;
         // Opt.mode = 0;//X.modeOrder[2];
-        Opt.mode = ((Opt.impType == 12 || Opt.impType == 14 ) ? 2 : Opt.mode);
+        Opt.mode = ((Opt.impType == 12 || Opt.impType == 14 ) ? (X.ndims -1) : Opt.mode);
         int mode = Opt.mode;
         int nr = U[mode].nRows;  
         int nc = U[mode].nCols;
         DTYPE *out = (DTYPE*)malloc(nr * nc * sizeof(DTYPE));
         memcpy(out, U[mode].vals, nr*nc * sizeof(DTYPE));
         print_matrix(U, mode);
-
-        // cout << "change double, mode sort, exec file" << endl; 
-
         randomize_mats(X, U, Opt);
         zero_mat(X, U, mode);
 
@@ -363,7 +363,6 @@ int main(int argc, char* argv[]){
         ((X.ndims == 3) ?  MTTKRP_COO_CPU(X, U, Opt) :  MTTKRP_COO_CPU_4D(X, U, Opt));
         print_matrix(U, mode);
         correctness_check(out, U[mode].vals, nr, nc);
-
     }
 }
 

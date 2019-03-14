@@ -1,4 +1,4 @@
-CXX=g++
+iCXX=g++
 # CXX=icc
 NVCC=nvcc
 NVCC_LIB_PATH=/usr/lib/x86_64-linux-gnu
