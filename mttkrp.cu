@@ -20,6 +20,7 @@ int main(int argc, char* argv[]){
     Tensor X;
     load_tensor(X, Opt);
     sort_COOtensor(X);
+    // print_COOtensor(X);
     
     TiledTensor TiledX[Opt.nTile];
       
@@ -277,7 +278,7 @@ int main(int argc, char* argv[]){
         omp_set_num_threads(X.ndims);
         // #pragma omp parallel 
         {
-            int threadnum = omp_get_thread_num(), numthreads = omp_get_num_threads();
+            // int threadnum = omp_get_thread_num(), numthreads = omp_get_num_threads();
             // #pragma omp for 
             for (int m = 0; m < X.ndims; ++m){
                 
@@ -286,9 +287,12 @@ int main(int argc, char* argv[]){
                     create_TiledHCSR(ModeWiseTiledX, Opt, m);
                     create_fbrLikeSlcInds(ModeWiseTiledX, m);
                     make_TiledBin(ModeWiseTiledX, Opt, m);
+                    // cout << "printing " << m << endl;
+                    // print_TiledCOO(ModeWiseTiledX, m);
+                    // print_TiledHCSRtensor(ModeWiseTiledX, m);
                     // compute_reuse(ModeWiseTiledX, Opt, m);
                 }
-                cout << threadnum << " " << numthreads << endl;
+                // cout << threadnum << " " << numthreads << endl;
             }
         }
         double omp_time = omp_get_wtime() - start_time;
@@ -349,7 +353,7 @@ int main(int argc, char* argv[]){
         if(Opt.verbose && (Opt.impType == 12 || Opt.impType == 14))
             cout << "checking only the last mode" << endl;
         // Opt.mode = 0;//X.modeOrder[2];
-        Opt.mode = ((Opt.impType == 12 || Opt.impType == 14 ) ? (X.ndims -1) : Opt.mode);
+        Opt.mode = ((Opt.impType == 12 || Opt.impType == 14 ) ? X.ndims-1 : Opt.mode);
         int mode = Opt.mode;
         int nr = U[mode].nRows;  
         int nc = U[mode].nCols;

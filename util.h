@@ -395,7 +395,7 @@ inline int sort_MI_CSF(const Tensor &X, TiledTensor *MTX, int m){
 
         vector < tuple <ITYPE, ITYPE, ITYPE, DTYPE> > items;
         tuple <ITYPE, ITYPE, ITYPE, DTYPE> ap;
-
+        
         for (long idx = 0; idx < MTX[m].totNnz; ++idx) { 
 
             ap=std::make_tuple(MTX[m].inds[mode0][idx], MTX[m].inds[mode1][idx], MTX[m].inds[mode2][idx], MTX[m].vals[idx]); 
@@ -404,13 +404,17 @@ inline int sort_MI_CSF(const Tensor &X, TiledTensor *MTX, int m){
 
         // sort(items.begin(), items.end(), sort_pred);
         boost::sort::sample_sort(items.begin(), items.end(), sort_pred_3D);
-
+        
+        #pragma omp parallel 
+        {
+        #pragma omp for 
         for (long idx = 0; idx < MTX[m].totNnz; ++idx) {
 
             MTX[m].inds[mode0][idx] = get<0>(items[idx]);
             MTX[m].inds[mode1][idx] = get<1>(items[idx]);
             MTX[m].inds[mode2][idx] = get<2>(items[idx]);
             MTX[m].vals[idx] = get<3>(items[idx]);
+        }
         }
     }
 
@@ -422,11 +426,13 @@ inline int sort_MI_CSF(const Tensor &X, TiledTensor *MTX, int m){
         for (long idx = 0; idx < MTX[m].totNnz; ++idx) { 
             
             ap=std::make_tuple(MTX[m].inds[mode0][idx], MTX[m].inds[mode1][idx], MTX[m].inds[mode2][idx], MTX[m].inds[mode3][idx], MTX[m].vals[idx]); 
-
             items.push_back(ap);
         }
         boost::sort::sample_sort(items.begin(), items.end(), sort_pred_4D);
 
+        // #pragma omp parallel 
+        {
+        // #pragma omp for 
         for (long idx = 0; idx < MTX[m].totNnz; ++idx) {
 
             MTX[m].inds[mode0][idx] = get<0>(items[idx]);
@@ -434,6 +440,7 @@ inline int sort_MI_CSF(const Tensor &X, TiledTensor *MTX, int m){
             MTX[m].inds[mode2][idx] = get<2>(items[idx]);           
             MTX[m].inds[mode3][idx] = get<3>(items[idx]);
             MTX[m].vals[idx] = get<4>(items[idx]);
+        }
         }
     } 
 
@@ -471,16 +478,13 @@ inline int print_COOtensor(const Tensor &X){
     }           
 }
 
-inline int print_TiledCOOtensor(const TiledTensor *TiledX, const int nTile){
+inline int print_TiledCOO(const TiledTensor *TiledX, const int tile){
 
-    for (int tile = 0; tile < nTile; ++tile){
-        cout << "tile: " << tile << endl;
-        for(ITYPE x = 0; x < TiledX[tile].totNnz; ++x) {
-            for (int i = 0; i < TiledX[tile].ndims; ++i)
-                cout << TiledX[tile].inds[i][x] << " ";
-            cout << endl;
-        } 
-    }          
+    for(ITYPE x = 0; x < TiledX[tile].totNnz; ++x) {
+        for (int i = 0; i < TiledX[tile].ndims; ++i)
+            cout << TiledX[tile].inds[i][x] << " ";
+        cout << endl;
+    }        
 }
 
 inline int print_HCSRtensor(const Tensor &X){
@@ -597,19 +601,43 @@ inline int print_TiledHCSRtensor(TiledTensor *TiledX, int tile){
     const ITYPE mode1 = TiledX[tile].modeOrder[1];
     const ITYPE mode2 = TiledX[tile].modeOrder[2];
     
-    for(ITYPE slc = 0; slc < TiledX[tile].fbrIdx[0].size(); ++slc) {
+    if(TiledX[tile].ndims == 3){
+        for(ITYPE slc = 0; slc < TiledX[tile].fbrIdx[0].size(); ++slc) {
 
-        ITYPE idx0 = TiledX[tile].fbrIdx[0][slc]; //slc
-        int fb_st = TiledX[tile].fbrPtr[0][slc];
-        int fb_end = TiledX[tile].fbrPtr[0][slc+1];
-        // printf("slc st- end: %d %d %d \n", slc, fb_st, fb_end );
-        
-        for (int fbr = fb_st; fbr < fb_end; ++fbr){        
-            // printf("fbr %d :  ", fbr );    
-            for(ITYPE x = TiledX[tile].fbrPtr[1][fbr]; x < TiledX[tile].fbrPtr[1][fbr+1]; ++x) {
-                cout << idx0 << " " << TiledX[tile].inds[mode1][x] << " " << TiledX[tile].inds[mode2][x] << endl;
+            ITYPE idx0 = TiledX[tile].fbrIdx[0][slc]; //slc
+            int fb_st = TiledX[tile].fbrPtr[0][slc];
+            int fb_end = TiledX[tile].fbrPtr[0][slc+1];
+            // printf("slc st- end: %d %d %d \n", slc, fb_st, fb_end );
+            
+            for (int fbr = fb_st; fbr < fb_end; ++fbr){        
+                // printf("fbr %d :  ", fbr );    
+                for(ITYPE x = TiledX[tile].fbrPtr[1][fbr]; x < TiledX[tile].fbrPtr[1][fbr+1]; ++x) {
+                    cout << idx0 << " " << TiledX[tile].inds[mode1][x] << " " << TiledX[tile].inds[mode2][x] << endl;
 
-            }            
+                }            
+            }
+        }
+    }
+
+    else if(TiledX[tile].ndims == 4){
+        for(ITYPE slc = 0; slc < TiledX[tile].fbrIdx[0].size(); ++slc) {
+            
+            for (int fbrS = TiledX[tile].fbrPtr[0][slc]; fbrS < TiledX[tile].fbrPtr[0][slc+1]; ++fbrS){   
+
+                for (int fbr = TiledX[tile].fbrPtr[1][fbrS]; fbr < TiledX[tile].fbrPtr[1][fbrS+1]; ++fbr){        
+         
+                    for(ITYPE x = TiledX[tile].fbrPtr[2][fbr]; x < TiledX[tile].fbrPtr[2][fbr+1]; ++x) {
+                        
+                        // if(mode0 == 0)
+                            cout << TiledX[tile].fbrLikeSlcInds[fbrS] << " " << TiledX[tile].fbrIdx[1][fbrS] << " " << TiledX[tile].fbrIdx[2][fbr] << " " << TiledX[tile].inds[3][x] << endl;
+                        // if(mode0 == 1)
+                        //     cout  << X.fbrIdx[1][fbr] << " " << X.inds[1][x] << " "<< X.fbrIdx[0][slc]; << endl;
+                        // if(mode0 == 2)
+                        //     cout  << X.inds[0][x]  << " " << X.fbrIdx[0][slc]; << " " << X.fbrIdx[1][fbr]<< endl;
+
+                    }  
+                }          
+            }
         }
     }
 }
@@ -1964,6 +1992,7 @@ inline int populate_paritions(Tensor &X, TiledTensor *MTX){
         MTX[mode].vals[nnzCntr[mode]] = X.vals[idx];    
         nnzCntr[mode]++;
     }
+
     return 0;
 }
 
@@ -2038,22 +2067,8 @@ inline int mm_partition_reuseBased(Tensor *arrX, Tensor &X, TiledTensor *MTX, Op
                 arrX[m].denseSlcPtr[arrX[m].fbrIdx[0][slc]+1] = arrX[m].fbrPtr[0][slc];
             else
                 arrX[m].denseSlcPtr[arrX[m].fbrIdx[0][slc]+1] = arrX[m].fbrPtr[0][slc+1];
-        }
-        }
-    }
 
-    // Populate nnz per fiber and nnz per slice 
-    for (int m = 0; m < arrX[0].ndims; ++m) {
-
-        /*dont need vals or last ids*/
-        // arrX[m].vals.resize(0);
-        // arrX[m].inds[X.modeOrder[X.ndims - 1]].resize(0);
-        // #pragma omp parallel 
-        {
-        // #pragma omp for 
-
-        for(ITYPE slc = 0; slc < arrX[m].fbrIdx[0].size(); ++slc) {
-
+            /* Populate nnz per fiber and nnz per slice */
             for (int fbr = arrX[m].fbrPtr[0][slc]; fbr < arrX[m].fbrPtr[0][slc+1]; ++fbr){      
                
                 arrX[m].nnzPerFiber[fbr] = arrX[m].fbrPtr[1][fbr+1] - arrX[m].fbrPtr[1][fbr];
@@ -2090,12 +2105,12 @@ inline int mm_partition_reuseBased(Tensor *arrX, Tensor &X, TiledTensor *MTX, Op
     ITYPE mode2 = 2;//X.modeOrder[2];
     ITYPE mode3 = 3;
 
-    int *fbrNnz = new int[X.ndims];
-    int *fbrNo = new int[X.ndims];
-    int *fbrSt = new int[X.ndims];
-    int *curIdx = new int[X.ndims];
-    int *sliceNnz = new int[X.ndims];
-    int tmpSlc;
+    // int *fbrNnz = new int[X.ndims];
+    // int *fbrNo = new int[X.ndims];
+    // int *fbrSt = new int[X.ndims];
+    // int *curIdx = new int[X.ndims];
+    // int *sliceNnz = new int[X.ndims];
+    // int tmpSlc;
 
     bool sameFm0m1 = false, sameFm0m2 = false, sameFm1m2 = false, sameFm0m3 = false, sameFm1m3 = false, sameFm2m3 = false;
 
@@ -2137,8 +2152,19 @@ inline int mm_partition_reuseBased(Tensor *arrX, Tensor &X, TiledTensor *MTX, Op
         }
     }
     bool casePr = false;
+    #pragma omp barrier
 
-    // /* Process NNZs*/
+    /******** Process NNZ********s*/
+    // #pragma omp parallel 
+    {
+    ITYPE *fbrNnz = new ITYPE[X.ndims];
+    ITYPE *fbrNo = new ITYPE[X.ndims];
+    ITYPE *curIdx = new ITYPE[X.ndims];
+    ITYPE *sliceNnz =  new ITYPE[X.ndims];
+    ITYPE tmpSlc;
+    int mode;
+
+    // #pragma omp for 
     for (int idx = 0; idx < X.totNnz; ++idx){
         
         bool modeDone = false;
@@ -2306,19 +2332,25 @@ inline int mm_partition_reuseBased(Tensor *arrX, Tensor &X, TiledTensor *MTX, Op
             mode = -1;
 
         }
-        // mode = 3;
+        // if(idx < 6)
+        //     mode = 1;
+        // else mode = 2;
+
+        // if( mode == 2)
+        //     for (int i = 0; i < 4; ++i)
+        //     {
+        //         cout << curIdx[i] << " ";
+        //     }
+        //     cout << endl;
+        // // mode = 3;
     
         /*populate new partitions*/
         if(mode > -1){
             X.partPerNnz[idx] = mode;
-            // for (int i = 0; i < X.ndims; ++i)  
-            //     MTX[mode].inds[i].push_back(X.inds[i][idx]); 
-
-            // MTX[mode].vals.push_back(X.vals[idx]); 
-            // MTX[mode].totNnz = MTX[mode].vals.size();
         }
         if(casePr) 
             cout << "selected mode: " << mode << endl;
+    }
     }
 
     // for (int m = 0; m < X.ndims; ++m)

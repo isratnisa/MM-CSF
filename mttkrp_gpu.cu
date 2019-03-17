@@ -743,7 +743,7 @@ __global__ void mttkrp_MIHCSR_kernel_slc_atomic_fbrLvlPar_4D(DTYPE * vals, ITYPE
 			 
 		        for(unsigned int x = fbrPtr2[fbr]; x < fbrPtr2[fbr+1]; x++) {
 
-			        unsigned int idx3 = dInds3[x];                    
+			        unsigned int idx3 = dInds3[x];
 
 		            for(unsigned int r=laneId; r<R; r+=32) {
 		                tmp_val += vals[x] * dU3[idx3 * R + r]; //2MR   
@@ -867,7 +867,7 @@ __global__ void mttkrp_MIHCSR_kernel_fbr_atomic_fbrLvlPar_4D(DTYPE * vals, ITYPE
 		unsigned int idx3 = fbrIdx1[fbrS];// dInds1[fbrPtr1[fbr]];  
 
         for (int fbr = fbrPtr1[fbrS] + workId; fbr < fbrPtr1[fbrS+1]; fbr+=warpPerSlice){
-			ITYPE idx0 = fbrIdx2[fbr];
+			unsigned int idx0 = fbrIdx2[fbr];
 			tmp_val = 0;
 	    
 		    for(unsigned int x = fbrPtr2[fbr]; x < fbrPtr2[fbr+1]; ++x) {
@@ -905,20 +905,20 @@ __global__ void mttkrp_MIHCSR_kernel_fbrS_atomic_fbrLvlPar_4D(DTYPE * vals, ITYP
 		unsigned int idx3 = fbrLikeSlcInds[fbrS];//slc;  
         
         for (int fbr = fbrPtr1[fbrS] + workId; fbr < fbrPtr1[fbrS+1]; fbr+=warpPerSlice){
-			ITYPE idx1 = fbrIdx2[fbr];
+			unsigned int idx1 = fbrIdx2[fbr];
 			tmp_val = 0;
 	    
 		    for(unsigned int x = fbrPtr2[fbr]; x < fbrPtr2[fbr+1]; ++x) {
 				unsigned int idx2 = dInds3[x];                    
 
 	            for(unsigned int r=laneId; r<R; r+=32) 
-	                tmp_val += vals[x] * dU2[idx2 * R + r]; //2MR
+	                tmp_val += vals[x] * dU2[idx2 * R + r] ; //2MR
 	        }
             for(unsigned int r=laneId; r<R; r+=32)  
-	        	tmp += tmp_val * dU1[idx1 * R + r] ;  
+	        	tmp += tmp_val * dU1[idx1 * R + r]  ;  
         }     
         for(unsigned int r=laneId; r<R; r+=32) { 
-        	tmp2 = tmp * dU3[idx3 * R + r] ;
+        	tmp2 = tmp * dU3[idx3 * R + r];
         	atomicAdd(&dU0[idx0 * R + r], tmp2); //2PR
         }    
 	}
@@ -2287,7 +2287,6 @@ int MTTKRP_ONE_HCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 	}
 	
 	for (int MTTKRPmode = 0; MTTKRPmode < TiledX[0].ndims; ++MTTKRPmode){
-	// for (int MTTKRPmode = 0; MTTKRPmode < 3; ++MTTKRPmode){
 
 		if(MTTKRPmode > 0){
 
@@ -2614,7 +2613,7 @@ int MTTKRP_MIHCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 
 	ITYPE *dInds2, *dInds3, *dfbrPtr0, *dfbrIdx0, *dfbrPtr1, *dfbrIdx1, *dFbrPtr2, *dFbrIdx2, *dSlcMapperBin, *dFbrLikeSlcInds;
 	DTYPE *dVals;
-	ITYPE dLoc = 0, dSlcLoc = 0, dSlcIdxLoc = 0, dFbrLoc =0,  dFbrIdxLoc =0, dBinLoc = 0, dFbrLoc2 =0, dFbrLikeSlcIndsLoc = 0;
+	ITYPE dLoc = 0, dSlcLoc = 0, dSlcIdxLoc = 0, dFbrLoc =0,  dFbrIdxLoc =0, dBinLoc = 0, dFbrLoc2 =0;
 	ITYPE totNnz = 0, totSlcPtr = 0, totSlcIdx = 0, totFbrPtr = 0, totFbrIdx = 0, totFbrPtr2 = 0;
 
 	// All m same mode
@@ -2667,7 +2666,6 @@ int MTTKRP_MIHCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 				dFbrLoc += TiledX[m - 1].fbrPtr[1].size();
 				dFbrIdxLoc += TiledX[m - 1].fbrIdx[1].size();
 				dFbrLoc2 += ((TiledX[m].ndims == 4) ? TiledX[m - 1].fbrPtr[2].size() : 0) ;
-				dFbrLikeSlcIndsLoc += TiledX[m - 1].fbrIdx[1].size();
 			}
 		}
 
@@ -2784,12 +2782,11 @@ int MTTKRP_MIHCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 		cudaStreamCreate(&streams[bin]);
 
 	for (int MTTKRPmode = 0; MTTKRPmode < TiledX[0].ndims; ++MTTKRPmode){
-	// for (int MTTKRPmode = 0; MTTKRPmode < 3; ++MTTKRPmode){
 
 		if(MTTKRPmode > 0){
 
 			mili = 0; GPUTime = 0; CPUtimer = 0;
-			dLoc = 0; dSlcLoc = 0; dSlcIdxLoc = 0; dFbrLoc =0; dFbrIdxLoc = 0; dFbrLoc2= 0, dFbrLikeSlcIndsLoc = 0;
+			dLoc = 0; dSlcLoc = 0; dSlcIdxLoc = 0; dFbrLoc =0; dFbrIdxLoc = 0; dFbrLoc2= 0;
 
 			// MTTKRP on mode mode 0 changed DU0. To pass correctness for now initializing to 2 again.
 			int mode = MTTKRPmode - 1;
@@ -2814,9 +2811,6 @@ int MTTKRP_MIHCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 		
 		for (int m = 0; m < TiledX[0].ndims; ++m){
 
-	
-			int orgMode = (TiledX[m].modeOrder[0] + 2) % TiledX[m].ndims;
-
 			/* matrix order according to mode order*/ 
 			for (int mm = 0; mm < TiledX[0].ndims; ++mm){
 				
@@ -2838,8 +2832,7 @@ int MTTKRP_MIHCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 					dSlcIdxLoc += TiledX[m - 1].fbrIdx[0].size(); 
 					dFbrLoc += TiledX[m - 1].fbrPtr[1].size();
 					dFbrIdxLoc += TiledX[m - 1].fbrIdx[1].size();
-					dFbrLoc2 += ((TiledX[0].ndims == 4) ? TiledX[m - 1].fbrPtr[2].size() : 0) ;
-					dFbrLikeSlcIndsLoc += TiledX[m - 1].fbrIdx[1].size();
+					dFbrLoc2 += ((TiledX[0].ndims == 4) ? TiledX[m - 1].fbrPtr[2].size(): 0) ;
 				}
 			}
 
@@ -2857,50 +2850,49 @@ int MTTKRP_MIHCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 
 				BLOCKSIZE = 128;
 				dim3 block(BLOCKSIZE, 1, 1), grid(1, 1, 1);
-				int slcPerTb = 0;
+				
 				int warpPerFbr = 1;//BLOCKSIZE/32;//1;//Opt.warpPerSlice;//4;//;
 				int logOfWarpPerFbr = log2(warpPerFbr);
 				int bin = 0;
-				bool useLoop = false;
 				int fbrPerWarp = BLOCKSIZE/32; // dont overflow TB
 				int logOfFbrPerWarp = log2(fbrPerWarp );
 
 				grid.x = ( warpPerFbr * 32 * ((TiledX[m].nFibers + fbrPerWarp-1)/fbrPerWarp) + BLOCKSIZE - 1) / BLOCKSIZE;
 	
 				if(TiledX[0].ndims == 3)
-					mttkrp_MIHCSR_kernel_slc_atomic_fbrLvlPar<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dFbrLikeSlcInds + dFbrLoc, 
-					dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].nFibers, 
+					mttkrp_MIHCSR_kernel_slc_atomic_fbrLvlPar<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dFbrLikeSlcInds + dFbrIdxLoc, 
+					dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrIdxLoc, TiledX[m].nFibers, 
 					dU + dULoc[0], dU + dULoc[1], dU + dULoc[2], Opt.mode, Opt.R, warpPerFbr, logOfWarpPerFbr, fbrPerWarp, logOfFbrPerWarp);
 		
 				else if(TiledX[0].ndims == 4)
-					mttkrp_MIHCSR_kernel_slc_atomic_fbrLvlPar_4D<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dFbrLikeSlcInds + dFbrLoc, 
-					dInds3 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, dFbrPtr2 + dFbrLoc2, dFbrIdx2 + dFbrLoc2, 
+					mttkrp_MIHCSR_kernel_slc_atomic_fbrLvlPar_4D<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dFbrLikeSlcInds + dFbrIdxLoc, 
+					dInds3 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrIdxLoc, dFbrPtr2 + dFbrLoc2, dFbrIdx2 + dFbrLoc2, 
 					TiledX[m].nFibers, dU + dULoc[0], dU + dULoc[1], dU + dULoc[2], dU + dULoc[3], Opt.mode, Opt.R, warpPerFbr, logOfWarpPerFbr, fbrPerWarp, logOfFbrPerWarp);
 			}
 
 			else if(TiledX[0].ndims == 4 && TiledX[m].modeOrder[1] == MTTKRPmode && TiledX[m].totNnz){
 
 				if(Opt.verbose)
-					cout << "FbrS atomics - " ;
+					cout << "FbrS atomics - ";
 
-					BLOCKSIZE = 128;//Opt.TBsize;
-					dim3 block(BLOCKSIZE, 1, 1), grid(1, 1, 1);
+				BLOCKSIZE = 128;//Opt.TBsize;
+				dim3 block(BLOCKSIZE, 1, 1), grid(1, 1, 1);
 
-					int warpPerFbr = 1;//BLOCKSIZE/32;//1;//Opt.warpPerSlice;//4;//;
-					int logOfWarpPerFbr = log2(warpPerFbr);
-					int bin = 0;
+				int warpPerFbr = 1;//BLOCKSIZE/32;//1;//Opt.warpPerSlice;//4;//;
+				int logOfWarpPerFbr = log2(warpPerFbr);
+				int bin = 0;
 
-					grid.x = ( warpPerFbr * 32 * TiledX[m].nFibers + BLOCKSIZE - 1) / BLOCKSIZE;
-										
-					mttkrp_MIHCSR_kernel_fbrS_atomic_fbrLvlPar_4D<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dFbrLikeSlcInds + dFbrLoc, 
-					dInds3 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, dFbrPtr2 + dFbrLoc2, dFbrIdx2 + dFbrLoc2, 
-					TiledX[m].nFibers, dU + dULoc[1], dU + dULoc[2], dU + dULoc[3], dU + dULoc[0], Opt.mode, Opt.R, warpPerFbr, logOfWarpPerFbr);
+				grid.x = ( warpPerFbr * 32 * TiledX[m].nFibers + BLOCKSIZE - 1) / BLOCKSIZE;
+				
+				mttkrp_MIHCSR_kernel_fbrS_atomic_fbrLvlPar_4D<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dFbrLikeSlcInds + dFbrIdxLoc, 
+				dInds3 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrIdxLoc, dFbrPtr2 + dFbrLoc2, dFbrIdx2 + dFbrLoc2, 
+				TiledX[m].nFibers, dU + dULoc[1], dU + dULoc[2], dU + dULoc[3], dU + dULoc[0], Opt.mode, Opt.R, warpPerFbr, logOfWarpPerFbr);
 			}
 
 			else if(TiledX[m].modeOrder[TiledX[0].ndims-2] == MTTKRPmode && TiledX[m].totNnz){
 			
 				if(Opt.verbose)
-					cout << "Fbr atomics - " ;
+					cout << "Fbr atomics - ";
 
 				BLOCKSIZE = 128;
 				dim3 block(BLOCKSIZE, 1, 1), grid(1, 1, 1);
@@ -2912,13 +2904,13 @@ int MTTKRP_MIHCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 				grid.x = ( warpPerFbr * 32 * TiledX[m].nFibers + BLOCKSIZE - 1) / BLOCKSIZE;
 
 				if(TiledX[0].ndims == 3)
-					mttkrp_MIHCSR_kernel_fbr_atomic_fbrLvlPar<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dFbrLikeSlcInds + dFbrLoc, 
-					dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].nFibers, 
+					mttkrp_MIHCSR_kernel_fbr_atomic_fbrLvlPar<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dFbrLikeSlcInds + dFbrIdxLoc, 
+					dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrIdxLoc, TiledX[m].nFibers, 
 					dU + dULoc[1], dU + dULoc[2], dU + dULoc[0], Opt.mode, Opt.R, warpPerFbr, logOfWarpPerFbr);
 				
 				else if (TiledX[0].ndims == 4)
-					mttkrp_MIHCSR_kernel_fbr_atomic_fbrLvlPar_4D<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dFbrLikeSlcInds + dFbrLoc, 
-					dInds3 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, dFbrPtr2 + dFbrLoc2, dFbrIdx2 + dFbrLoc2, 
+					mttkrp_MIHCSR_kernel_fbr_atomic_fbrLvlPar_4D<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dFbrLikeSlcInds + dFbrIdxLoc, 
+					dInds3 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrIdxLoc, dFbrPtr2 + dFbrLoc2, dFbrIdx2 + dFbrLoc2, 
 					TiledX[m].nFibers,  dU + dULoc[2], dU + dULoc[3], dU + dULoc[0], dU + dULoc[1], Opt.mode, Opt.R, warpPerFbr, logOfWarpPerFbr);
 			}
 
@@ -2937,13 +2929,13 @@ int MTTKRP_MIHCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 				grid.x = ( warpPerFbr * 32 * TiledX[m].nFibers + BLOCKSIZE - 1) / BLOCKSIZE;
 
 				if (TiledX[0].ndims == 3)
-					mttkrp_MIHCSR_kernel_all_atomic_fbrLvlPar<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dFbrLikeSlcInds + dFbrLoc, 
-					dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[m].nFibers, 
+					mttkrp_MIHCSR_kernel_all_atomic_fbrLvlPar<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dFbrLikeSlcInds + dFbrIdxLoc, 
+					dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrIdxLoc, TiledX[m].nFibers, 
 					dU + dULoc[2], dU + dULoc[0], dU + dULoc[1], Opt.mode, Opt.R, warpPerFbr, logOfWarpPerFbr); 
 
 				else if (TiledX[0].ndims == 4)
-					mttkrp_MIHCSR_kernel_all_atomic_fbrLvlPar_4D<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dFbrLikeSlcInds + dFbrLoc, 
-					dInds3 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, dFbrPtr2 + dFbrLoc2, dFbrIdx2 + dFbrLoc2, 
+					mttkrp_MIHCSR_kernel_all_atomic_fbrLvlPar_4D<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dFbrLikeSlcInds + dFbrIdxLoc, 
+					dInds3 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrIdxLoc, dFbrPtr2 + dFbrLoc2, dFbrIdx2 + dFbrLoc2, 
 					TiledX[m].nFibers,  dU + dULoc[3], dU + dULoc[0], dU + dULoc[1], dU + dULoc[2], Opt.mode, Opt.R, warpPerFbr, logOfWarpPerFbr);
 			}
 		
@@ -2982,8 +2974,9 @@ int MTTKRP_MIHCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 	// Copying output matrix from GPU to CPU
 	
 	if(Opt.impType == 12){
-		int MTTKRPmode = 2;
-		checkCuda(cudaMemcpy(&U[MTTKRPmode].vals[0], dU + szDU[0] + szDU[1], U[MTTKRPmode].nRows * U[MTTKRPmode].nCols * sizeof(DTYPE), cudaMemcpyDeviceToHost), 0);
+		int MTTKRPmode = TiledX[0].ndims - 1;
+		int loc = ((TiledX[0].ndims == 3) ? szDU[0] + szDU[1] : szDU[0] + szDU[1] + szDU[2]);
+		checkCuda(cudaMemcpy(&U[MTTKRPmode].vals[0], dU + loc, U[MTTKRPmode].nRows * U[MTTKRPmode].nCols * sizeof(DTYPE), cudaMemcpyDeviceToHost), 0);
 	}
 	else
 		checkCuda(cudaMemcpy(&U[Opt.mode].vals[0], dU, U[Opt.mode].nRows * U[Opt.mode].nCols * sizeof(DTYPE), cudaMemcpyDeviceToHost), 0);
