@@ -6,6 +6,7 @@
 #include <math.h> 
 #include <omp.h>
 #include <cuda.h>
+#include "mttkrp_mpi.h"
 #include "mttkrp_cpu.h"
 #include "mttkrp_gpu.h" 
 #include <bits/stdc++.h> 
@@ -20,7 +21,15 @@ int main(int argc, char* argv[]){
     Tensor X;
     load_tensor(X, Opt);
     sort_COOtensor(X);
-    // print_COOtensor(X);
+    
+    if(Opt.useMPI){
+        cout <<"For ri2: Load module (e.g. $module load mvapich2-2.1/gcc)" << endl;
+        cout <<"For ri2: Put correct mpibin (e.g. $mpiexec -n 4 ./mttkrp ..)" << endl;
+        MPI_param MPIparam;
+        create_HCSR(X, Opt);
+        start_mpi(MPIparam);
+        create_mpi_partition(X, MPIparam);
+    }
     
     TiledTensor TiledX[Opt.nTile];
       

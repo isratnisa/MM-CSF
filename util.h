@@ -147,6 +147,7 @@ public:
     std::string m0 = "012";
     std::string m1 = "120";
     std::string m2 = "201";
+    bool useMPI = true;
     bool natOrdering = false;
     ITYPE fbrThreashold = 99999999;
 
@@ -223,10 +224,10 @@ inline int order_tensormode(Tensor &X, const Options &Opt, const int mode){
             X.modeOrder.push_back(sortMode[i]);
     }
 
-    cout << "mode ordering: ";
-    for (int i = 0; i < X.ndims; ++i)
-        cout << X.modeOrder[i] << " ";
-    cout << endl;
+    // cout << "mode ordering: ";
+    // for (int i = 0; i < X.ndims; ++i)
+    //     cout << X.modeOrder[i] << " ";
+    // cout << endl;
 }
 
 inline int load_tensor(Tensor &X, const Options &Opt){

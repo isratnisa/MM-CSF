@@ -1,4 +1,4 @@
-iCXX=g++
+CXX=g++
 # CXX=icc
 NVCC=nvcc
 NVCC_LIB_PATH=/usr/lib/x86_64-linux-gnu
@@ -6,10 +6,8 @@ NVCC_LIB_PATH=/usr/lib/x86_64-linux-gnu
 BOOSTFLAG=-L/usr/local/boost/gnu/7.3/1.67.0/lib -I/home/nisa/Downloads/boost_1_69_0
 CXXFLAGS=-O3 -std=c++11 -g -fopenmp $(BOOSTFLAG)
 
- # -fno-tree-vectorize
-# -fno-strict-aliasing
-# -DUSE_RESTRICT
-#NVCCFLAGS +=-O3 -fopenmp -w -restrict #--ptxas-options=-v
+MPIFLAGS = -I/act/mvapich2-2.1/gcc/include
+MPILINKFLAGS=-L/act/mvapich2-2.1/gcc/lib -lmpi
 
 NVCCFLAGS += -O3 -w -gencode arch=compute_70,code=sm_70 -rdc=true -Xptxas -dlcm=ca -Xcompiler -fopenmp --std=c++11 -m64 -lineinfo $(BOOSTFLAG) #–default-stream #per-thread #-g #-G
 NVCCLINKFLAGS = -L$(NVCC_LIB_PATH) -lcudart
@@ -20,10 +18,10 @@ ttm: ttm.cu ttm_cpu.o ttm_gpu.o
 	${NVCC} ${NVCCFLAGS} -o ttm ttm_cpu.o ttm_gpu.o ttm.cu $(NVCCLINKFLAGS)  
 
 mttkrp: mttkrp.cu mttkrp_cpu.o mttkrp_gpu.o
-	${NVCC} ${NVCCFLAGS} -o mttkrp mttkrp_cpu.o mttkrp_gpu.o mttkrp.cu $(NVCCLINKFLAGS)  
+	${NVCC} ${NVCCFLAGS} ${MPIFLAGS} ${MPILINKFLAGS} -o mttkrp mttkrp_cpu.o mttkrp_gpu.o mttkrp.cu $(NVCCLINKFLAGS)  
 
-mttkrp_gpu.o: mttkrp_gpu.h mttkrp_gpu.cu util.h
-	${NVCC} ${NVCCFLAGS} -c -o mttkrp_gpu.o mttkrp_gpu.cu $(NVCCLINKFLAGS)  
+mttkrp_gpu.o: mttkrp_gpu.h mttkrp_gpu.cu util.h mttkrp_mpi.h
+	${NVCC} ${NVCCFLAGS} ${MPIFLAGS} ${MPILINKFLAGS} -c -o mttkrp_gpu.o mttkrp_gpu.cu $(NVCCLINKFLAGS)  
 
 mttkrp_cpu.o: mttkrp_cpu.h mttkrp_cpu.cpp util.h
 	${CXX} ${CXXFLAGS} -c -o mttkrp_cpu.o mttkrp_cpu.cpp
