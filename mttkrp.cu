@@ -17,6 +17,7 @@ int main(int argc, char* argv[]){
  
     cudaDeviceSetCacheConfig(cudaFuncCachePreferL1);
     Options Opt = parse_cmd_options(argc, argv);
+    check_opt(Opt); //check options are good
 
     Tensor X;
     load_tensor(X, Opt);

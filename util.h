@@ -174,6 +174,23 @@ public:
     }
 };
 
+inline int check_opt(const Tensor &X, const Options &Opt){
+    
+    if(X.ndims > 4){
+        cout << "Supported tensor dimension is 3 or 4." << endl;
+        exit(0);
+    }
+
+    if(Opt.mode > X.ndims - 1){
+        cout << "Mode cannot be larger than tensor dimension." << endl;
+        exit(0);
+    }
+
+    if(Opt.impType == 11 || Opt.impType == 12 )
+        Opt.mode = 0;
+
+} 
+
 inline int order_tensormode(Tensor &X, const Options &Opt, const int mode){
 
     int *sortMode = new int[X.ndims]; //sorted according to mode length
@@ -2030,6 +2047,12 @@ inline int binarySearch(ITYPE *arr, ITYPE l, ITYPE r, ITYPE x) {
     return -1; 
 }
 
+inline int maxOf3( int a, int b, int c )
+{
+   int max = ( a < b ) ? b : a;
+   return ( ( max < c ) ? c : max );
+}
+
 inline int mm_partition_reuseBased(Tensor *arrX, Tensor &X, TiledTensor *MTX, Options & Opt){
 
     X.partPerNnz = new ITYPE[X.totNnz];
@@ -2113,7 +2136,8 @@ inline int mm_partition_reuseBased(Tensor *arrX, Tensor &X, TiledTensor *MTX, Op
     // int *sliceNnz = new int[X.ndims];
     // int tmpSlc;
 
-    bool sameFm0m1 = false, sameFm0m2 = false, sameFm1m2 = false, sameFm0m3 = false, sameFm1m3 = false, sameFm2m3 = false;
+    bool sameFm0m1 = false, sameFm0m2 = false, sameFm1m2 = false, sameFm0m3 = false, 
+        sameFm1m3 = false, sameFm2m3 = false;
 
     int fbTh =  Opt.MIfbTh;
     int slTh =  1, shortMode = 0;
@@ -2158,7 +2182,8 @@ inline int mm_partition_reuseBased(Tensor *arrX, Tensor &X, TiledTensor *MTX, Op
     /******** Process NNZ********s*/
     // #pragma omp parallel 
     {
-    ITYPE *fbrNnz = new ITYPE[X.ndims];
+    ITYPE *fbrNnz = new ITYPE[4];
+    memset(fbrNnz, 0, 4 * sizeof(ITYPE));   //hard code to check fbrnnz[3]  
     ITYPE *fbrNo = new ITYPE[X.ndims];
     ITYPE *curIdx = new ITYPE[X.ndims];
     ITYPE *sliceNnz =  new ITYPE[X.ndims];
@@ -2229,110 +2254,38 @@ inline int mm_partition_reuseBased(Tensor *arrX, Tensor &X, TiledTensor *MTX, Op
             // sliceNnz[m] = fbrNnz[m];
             // sliceNnz[m] = arrX[m].nnzPerSlice[curIdx[m]] + 5*fbrNnz[m];
         }
-        if(casePr) {
-            cout << curIdx[0] << " " << curIdx[1] <<" " << curIdx[2] << endl; 
-            for (int m = 0; m < X.ndims; ++m){
-
-                 cout << m <<" slcNnz: "<<sliceNnz[m] << " " <<" fbrNnz: (" <<curIdx[m]<<","<<
-                 fbrNo[m]  <<")- " << fbrNnz[m] << endl;
-            }
-        }
 
         /* if fiber is longer */
 
-        // /*check fiber 0*/
-        if(sameFm0m1 || sameFm0m2 || !modeDone){
-
-            if(casePr) cout << "case 0 true" << endl;
-
-            if(sameFm0m1){
-               // fiberLen 0 and fiberLen 1 are same
-                if ( fbrNnz[0] >=  fbTh * fbrNnz[2]) {
-                    
-                    modeDone = true;
-                    mode = shortMode;
-            
-                }
-                else if (fbrNnz[2] >=  fbTh * fbrNnz[0]) {
-                    modeDone = true;
-                    mode = 2;
-                }
-            }
-            else if(sameFm0m2){
-
-                if ( fbrNnz[0] >=  fbTh * fbrNnz[1]) {
-
-                     modeDone = true;
-                     mode = shortMode;
-                
-                }
-                else if (fbrNnz[1] >=  fbTh * fbrNnz[0]) {
-                    modeDone = true;
-                    mode = 1;
-                }
-            }
-        }
-
-        else if ( fbrNnz[0] >=  fbTh * std::max(fbrNnz[1] , fbrNnz[2]) && !modeDone) {
-            // add a alice condition maybe 2 * fbth
-            if(casePr ) cout << "case 1 true" << endl;
+        if ( fbrNnz[0] >=  fbTh * maxOf3(fbrNnz[1] , fbrNnz[2], fbrNnz[3]) && !modeDone) {
             modeDone = true;
-            mode = 0;
-        }
-
-        /*check fiber 1*/
-        if(sameFm1m2 && !modeDone){ //m0m1 already taken care of in prev if
-
-            if(casePr ) cout << "case 2 true" << endl;
-           
-            if ( fbrNnz[1] >=  fbTh * fbrNnz[0]) {
-                
-                modeDone = true;
+            if(sameFm0m1 || sameFm0m2 || sameFm0m3)
                 mode = shortMode;
-            }
-            else if (fbrNnz[0] >=  fbTh * fbrNnz[1]) {
-                modeDone = true;
+            else
                 mode = 0;
-            }           
         }
-
-        else if ( fbrNnz[1] >=  fbTh * std::max(fbrNnz[0] , fbrNnz[2]) && !modeDone) {
+        else if ( fbrNnz[1] >=  fbTh * maxOf3(fbrNnz[0] , fbrNnz[2], fbrNnz[3]) && !modeDone) {
             modeDone = true;
-            mode = 1;
-            if(casePr ) cout << "case 3 true" << endl;
+            if(sameFm1m2 || sameFm1m3)
+                mode = shortMode;
+            else 
+                mode = 1;
         }
-
-        /*check fibe 2*/
-        //sameFm0m2, sameFm1m2 are taken care of
-        if ( fbrNnz[2] >=  fbTh * std::max(fbrNnz[0] , fbrNnz[1]) && !modeDone) {
-            mode = 2;
+        else if ( fbrNnz[2] >=  fbTh * maxOf3(fbrNnz[0] , fbrNnz[1], fbrNnz[3]) && !modeDone) {
             modeDone = true;
-            if(casePr ) cout << "case 5 true" << endl;           
+            if(sameFm2m3)
+                mode = shortMode;
+            else 
+                mode = 2;
         }
-
-        /* if slice is longer */
-        if ( sliceNnz[2] >=  slTh * std::max(sliceNnz[0], sliceNnz[1]) && !modeDone) { 
-            mode = 2;//mode1;
+        else if ( fbrNnz[3] >=  fbTh * maxOf3(fbrNnz[0] , fbrNnz[1], fbrNnz[2]) && !modeDone) {
             modeDone = true;
-            if(casePr ) cout << "case 7 true" << endl;
+            mode = 3;
         }
 
-        else if ( sliceNnz[1] >=  slTh * std::max(sliceNnz[0], sliceNnz[2]) && !modeDone)    { 
-            mode = 1;//mode0;
-            modeDone = true;
-            if(casePr ) cout << "case 6 true" << endl;
-        }
-
-        else if ( sliceNnz[0] >=  slTh * std::max(sliceNnz[1], sliceNnz[2])  && !modeDone)  {   
-            modeDone = true;
-            mode = 0;//mode2;
-            if(casePr ) cout << "case 8 true" << endl;
-        }
-
-        if(!modeDone){
+        if(!modeDone)
             mode = -1;
 
-        }
         // if(idx < 6)
         //     mode = 1;
         // else mode = 2;
@@ -2357,6 +2310,335 @@ inline int mm_partition_reuseBased(Tensor *arrX, Tensor &X, TiledTensor *MTX, Op
     // for (int m = 0; m < X.ndims; ++m)
     //     MTX[m].totNnz = MTX[m].vals.size();
 }
+// more detailed check
+// inline int mm_partition_reuseBased(Tensor *arrX, Tensor &X, TiledTensor *MTX, Options & Opt){
+
+//     X.partPerNnz = new ITYPE[X.totNnz];
+//     memset(X.partPerNnz, 0, X.totNnz * sizeof(ITYPE));  
+//     X.totnnzPerPart = new ITYPE[X.ndims];
+//     memset(X.totnnzPerPart, 0, X.ndims * sizeof(ITYPE));  
+ 
+//     for (int m = 0; m < arrX[0].ndims; ++m){
+        
+//         int sliceMode=arrX[m].modeOrder[0];
+//         int fiberMode=arrX[m].modeOrder[1];
+        
+//         arrX[m].nnzPerFiber = new ITYPE[arrX[m].nFibers];
+//         memset(arrX[m].nnzPerFiber, 0, arrX[m].nFibers * sizeof(ITYPE));     
+
+//         arrX[m].nnzPerSlice = new ITYPE[arrX[m].dims[sliceMode]];
+//         memset(arrX[m].nnzPerSlice, 0, arrX[m].dims[sliceMode] * sizeof(ITYPE));  
+
+//         arrX[m].denseSlcPtr = (ITYPE*)malloc( (arrX[m].dims[sliceMode]+1) * sizeof(ITYPE)); //new ITYPE[arrX[m].dims[sliceMode]];
+//         memset(arrX[m].denseSlcPtr, 0, (arrX[m].dims[sliceMode] + 1 ) * sizeof(ITYPE));  
+//     }
+
+//     /*creating dense slices so that nnz can directly index slices unlike fiber. For
+//     fiber it needs to scan all fibers in a slice. */
+
+//     for (int m = 0; m < arrX[0].ndims; ++m){
+
+//         // #pragma omp parallel 
+//         {
+//         // #pragma omp for 
+//         for(ITYPE slc = 0; slc < arrX[m].fbrIdx[0].size(); ++slc) {
+
+//             arrX[m].denseSlcPtr[arrX[m].fbrIdx[0][slc]] = arrX[m].fbrPtr[0][slc];
+                   
+//             if(slc == arrX[m].fbrIdx[0].size()-1)
+//                 arrX[m].denseSlcPtr[arrX[m].fbrIdx[0][slc]+1] = arrX[m].fbrPtr[0][slc];
+//             else
+//                 arrX[m].denseSlcPtr[arrX[m].fbrIdx[0][slc]+1] = arrX[m].fbrPtr[0][slc+1];
+
+//             /* Populate nnz per fiber and nnz per slice */
+//             for (int fbr = arrX[m].fbrPtr[0][slc]; fbr < arrX[m].fbrPtr[0][slc+1]; ++fbr){      
+               
+//                 arrX[m].nnzPerFiber[fbr] = arrX[m].fbrPtr[1][fbr+1] - arrX[m].fbrPtr[1][fbr];
+//                 arrX[m].nnzPerSlice[arrX[m].fbrIdx[0][slc]] += arrX[m].nnzPerFiber[fbr];
+//             }
+//         }
+//         }
+//     }
+
+//     // #pragma omp barrier
+
+//     int threshold = ( X.totNnz / X.dims[0] + X.totNnz / X.dims[1] + X.totNnz / X.dims[2]) / 3;
+//     int thNnzInTile = X.totNnz*1;
+
+//     /* initialize MICSF tiles */
+//     int mode = 0;
+
+//     for (int m = 0; m < X.ndims; ++m){
+
+//         MTX[m].ndims = X.ndims;
+//         MTX[m].dims = new ITYPE[MTX[m].ndims];  
+//         MTX[m].totNnz = 0; // WHY mode?
+        
+//         for (int i = 0; i < X.ndims; ++i){
+//             MTX[m].modeOrder.push_back(arrX[m].modeOrder[i]); 
+//             MTX[m].dims[i] = X.dims[i];
+//         }     
+//     }    
+
+//     /* Populate with nnz for each slice for each mode */
+
+//     ITYPE mode0 = 0;//std::min(X.dims[0], X.dims[1], X.dims[2]);
+//     ITYPE mode1 = 1;//X.modeOrder[1];
+//     ITYPE mode2 = 2;//X.modeOrder[2];
+//     ITYPE mode3 = 3;
+
+//     // int *fbrNnz = new int[X.ndims];
+//     // int *fbrNo = new int[X.ndims];
+//     // int *fbrSt = new int[X.ndims];
+//     // int *curIdx = new int[X.ndims];
+//     // int *sliceNnz = new int[X.ndims];
+//     // int tmpSlc;
+
+//     bool sameFm0m1 = false, sameFm0m2 = false, sameFm1m2 = false, sameFm0m3 = false, sameFm1m3 = false, sameFm2m3 = false;
+
+//     int fbTh =  Opt.MIfbTh;
+//     int slTh =  1, shortMode = 0;
+//     cout << "fiber threshold: " << fbTh << " MUST CHANGE last else " << endl;
+
+//     for (int m = 0; m < X.ndims; ++m){
+
+//         if(m == 1){
+//             if (arrX[m].modeOrder[1] == arrX[m-1].modeOrder[0] && arrX[m].modeOrder[0] == arrX[m-1].modeOrder[1]){
+//                 sameFm0m1 = true;
+//                 shortMode = (arrX[m].dims[0] <= arrX[m].dims[1] ? 0 : 1);
+//             }
+//         }
+//         else if(m == 2){
+//             if(arrX[m].modeOrder[1] == arrX[m-2].modeOrder[0] && arrX[m].modeOrder[0] == arrX[m-2].modeOrder[1]){
+//                 sameFm0m2 = true;
+//                 shortMode = (arrX[m].dims[0] <= arrX[m].dims[2] ? 0 : 2);
+//             }
+//             else if ( arrX[m].modeOrder[1] == arrX[m-1].modeOrder[0] && arrX[m].modeOrder[0] == arrX[m-1].modeOrder[1]){
+//                 sameFm1m2 = true;
+//                 shortMode = (arrX[m].dims[1] <= arrX[m].dims[2] ? 1 : 2);
+//             }
+//         }
+//         else if(m == 3){
+//             if(arrX[m].modeOrder[1] == arrX[m-3].modeOrder[0] && arrX[m].modeOrder[0] == arrX[m-3].modeOrder[1]){
+//                 sameFm0m3 = true;
+//                 shortMode = (arrX[m].dims[0] <= arrX[m].dims[3] ? 0 : 3);
+//             }
+//             else if ( arrX[m].modeOrder[1] == arrX[m-2].modeOrder[0] && arrX[m].modeOrder[0] == arrX[m-2].modeOrder[1]){
+//                 sameFm1m3 = true;
+//                 shortMode = (arrX[m].dims[1] <= arrX[m].dims[3] ? 1 : 3);
+//             }
+//             else if ( arrX[m].modeOrder[1] == arrX[m-1].modeOrder[0] && arrX[m].modeOrder[0] == arrX[m-1].modeOrder[1]){
+//                 sameFm2m3 = true;
+//                 shortMode = (arrX[m].dims[2] <= arrX[m].dims[3] ? 2 : 3);
+//             }
+//         }
+//     }
+//     bool casePr = false;
+//     #pragma omp barrier
+
+//     /******** Process NNZ********s*/
+//     // #pragma omp parallel 
+//     {
+//     ITYPE *fbrNnz = new ITYPE[X.ndims];
+//     memset(fbrNnz, 0, X.ndims * sizeof(ITYPE));     
+//     ITYPE *fbrNo = new ITYPE[X.ndims];
+//     ITYPE *curIdx = new ITYPE[X.ndims];
+//     ITYPE *sliceNnz =  new ITYPE[X.ndims];
+//     ITYPE tmpSlc;
+//     int mode;
+
+//     // #pragma omp for 
+//     for (int idx = 0; idx < X.totNnz; ++idx){
+        
+//         bool modeDone = false;
+
+//         // if(idx%1000000 == 0 && idx < 10000000 )  casePr = true;
+//         // else casePr = false;
+   
+//         for (int m = 0; m < X.ndims; ++m)
+//             curIdx[m] = X.inds[m][idx];
+
+//         /*Finding fiber nnz*/
+//         for (int m = 0; m < X.ndims; ++m){
+//             int nextMode = arrX[m].modeOrder[1];
+
+//             sliceNnz[m] = arrX[m].nnzPerSlice[curIdx[m]];//+ arrX[nextMode].nnzPerSlice[curIdx[nextMode]];    ;
+//             // fbrNnz[m] =  arrX[nextMode].nnzPerSlice[curIdx[nextMode]];    
+//             //change to sameFm*m*
+//             if((m == 1 && sameFm0m1) || (m == 2 && sameFm1m2) || (m == 3 && sameFm2m3)){
+//                 fbrNnz[m] = fbrNnz[m - 1];
+//                 fbrNo[m] = 99999;//curIdx[arrX[m].modeOrder[1]];
+//             }
+//             else if((m == 2 && sameFm0m2) || (m == 3 && sameFm1m3)){
+//                 fbrNnz[m] = fbrNnz[m - 2];
+//                 fbrNo[m] = 99999;//curIdx[arrX[m].modeOrder[1]];
+//             }
+//             else if(m == 3 && sameFm0m3){
+//                 fbrNnz[m] = fbrNnz[m - 3];
+//                 fbrNo[m] = 99999;//curIdx[arrX[m].modeOrder[1]];
+//             }
+//             else{
+//                 ITYPE result, tmp, tmpCounter = 0;
+//                 ITYPE idx_j = curIdx[arrX[m].modeOrder[1]];
+//                 tmpSlc = curIdx[m];
+
+//                 /*linear search*/
+
+//                 // for (int fbr = arrX[m].denseSlcPtr[tmpSlc]; fbr < arrX[m].denseSlcPtr[tmpSlc+1]; ++fbr){  
+
+//                 //     if(arrX[m].fbrIdx[1][fbr] == idx_j){
+//                 //         fbrNnz[m] = arrX[m].nnzPerFiber[fbr];
+//                 //         fbrNo[m] = curIdx[arrX[m].modeOrder[1]];
+//                 //         fbrSt[m] = fbr;
+//                 //         break;
+//                 //     }
+//                 // }
+//                 /*binary search*/
+//                 {
+//                     int n =  arrX[m].denseSlcPtr[tmpSlc+1] - arrX[m].denseSlcPtr[tmpSlc];//sizeof(arr) / sizeof(arr[0]); 
+//                     ITYPE fbr = arrX[m].denseSlcPtr[tmpSlc];  
+//                     result = binarySearch1(&(arrX[m].fbrIdx[1][fbr]), 0, n, idx_j); 
+//                     tmp = arrX[m].nnzPerFiber[result+fbr];
+//                     fbrNnz[m] = tmp;
+//                 }
+
+//                 // if(idx%1000000 == 0 && idx < 10000000){
+//                 //     cout << m<<" mm " << arrX[m].fbrPtr[0][tmpSlc]<<"," << arrX[m].denseSlcPtr[tmpSlc]
+//                 //     <<" " <<arrX[m].fbrPtr[0][tmpSlc+1]<<"," << arrX[m].denseSlcPtr[tmpSlc+1]
+//                 //     <<" from linear search " << fbrNnz[m]  <<" binary " << tmp << endl; //<<" hash"  << check
+//                 // }
+//             }
+//             // sliceNnz[m] = fbrNnz[m];
+//             // sliceNnz[m] = arrX[m].nnzPerSlice[curIdx[m]] + 5*fbrNnz[m];
+//         }
+//         if(casePr) {
+//             cout << curIdx[0] << " " << curIdx[1] <<" " << curIdx[2] << endl; 
+//             for (int m = 0; m < X.ndims; ++m){
+
+//                  cout << m <<" slcNnz: "<<sliceNnz[m] << " " <<" fbrNnz: (" <<curIdx[m]<<","<<
+//                  fbrNo[m]  <<")- " << fbrNnz[m] << endl;
+//             }
+//         }
+
+//         /* if fiber is longer */
+
+//         // /*check fiber 0*/
+//         if(sameFm0m1 || sameFm0m2 || !modeDone){
+
+//             if(casePr) cout << "case 0 true" << endl;
+
+//             if(sameFm0m1){
+//                // fiberLen 0 and fiberLen 1 are same
+//                 if ( fbrNnz[0] >=  fbTh * fbrNnz[2]) {
+                    
+//                     modeDone = true;
+//                     mode = shortMode;
+            
+//                 }
+//                 else if (fbrNnz[2] >=  fbTh * fbrNnz[0]) {
+//                     modeDone = true;
+//                     mode = 2;
+//                 }
+//             }
+//             else if(sameFm0m2){
+
+//                 if ( fbrNnz[0] >=  fbTh * fbrNnz[1]) {
+
+//                      modeDone = true;
+//                      mode = shortMode;
+                
+//                 }
+//                 else if (fbrNnz[1] >=  fbTh * fbrNnz[0]) {
+//                     modeDone = true;
+//                     mode = 1;
+//                 }
+//             }
+//         }
+
+//         else if ( fbrNnz[0] >=  fbTh * std::max(fbrNnz[1] , fbrNnz[2]) && !modeDone) {
+//             // add a alice condition maybe 2 * fbth
+//             if(casePr ) cout << "case 1 true" << endl;
+//             modeDone = true;
+//             mode = 0;
+//         }
+
+//         /*check fiber 1*/
+//         if(sameFm1m2 && !modeDone){ //m0m1 already taken care of in prev if
+
+//             if(casePr ) cout << "case 2 true" << endl;
+           
+//             if ( fbrNnz[1] >=  fbTh * fbrNnz[0]) {
+                
+//                 modeDone = true;
+//                 mode = shortMode;
+//             }
+//             else if (fbrNnz[0] >=  fbTh * fbrNnz[1]) {
+//                 modeDone = true;
+//                 mode = 0;
+//             }           
+//         }
+
+//         else if ( fbrNnz[1] >=  fbTh * std::max(fbrNnz[0] , fbrNnz[2]) && !modeDone) {
+//             modeDone = true;
+//             mode = 1;
+//             if(casePr ) cout << "case 3 true" << endl;
+//         }
+
+//         /*check fibe 2*/
+//         //sameFm0m2, sameFm1m2 are taken care of
+//         if ( fbrNnz[2] >=  fbTh * std::max(fbrNnz[0] , fbrNnz[1]) && !modeDone) {
+//             mode = 2;
+//             modeDone = true;
+//             if(casePr ) cout << "case 5 true" << endl;           
+//         }
+
+//         /* if slice is longer */
+//         if ( sliceNnz[2] >=  slTh * std::max(sliceNnz[0], sliceNnz[1]) && !modeDone) { 
+//             mode = 2;//mode1;
+//             modeDone = true;
+//             if(casePr ) cout << "case 7 true" << endl;
+//         }
+
+//         else if ( sliceNnz[1] >=  slTh * std::max(sliceNnz[0], sliceNnz[2]) && !modeDone)    { 
+//             mode = 1;//mode0;
+//             modeDone = true;
+//             if(casePr ) cout << "case 6 true" << endl;
+//         }
+
+//         else if ( sliceNnz[0] >=  slTh * std::max(sliceNnz[1], sliceNnz[2])  && !modeDone)  {   
+//             modeDone = true;
+//             mode = 0;//mode2;
+//             if(casePr ) cout << "case 8 true" << endl;
+//         }
+
+//         if(!modeDone){
+//             mode = -1;
+
+//         }
+//         // if(idx < 6)
+//         //     mode = 1;
+//         // else mode = 2;
+
+//         // if( mode == 2)
+//         //     for (int i = 0; i < 4; ++i)
+//         //     {
+//         //         cout << curIdx[i] << " ";
+//         //     }
+//         //     cout << endl;
+//         // // mode = 3;
+    
+//         /*populate new partitions*/
+//         if(mode > -1){
+//             X.partPerNnz[idx] = mode;
+//         }
+//         if(casePr) 
+//             cout << "selected mode: " << mode << endl;
+//     }
+//     }
+
+//     // for (int m = 0; m < X.ndims; ++m)
+//     //     MTX[m].totNnz = MTX[m].vals.size();
+// }
 
 // can take the slice nnz conditions
 // inline int mm_partition_allMode(Tensor *arrX, Tensor &X, TiledTensor *MTX, Options & Opt){
