@@ -2,7 +2,7 @@
 #define UTIL_H
 
 #define DTYPE float
-#define ITYPE size_t
+#define ITYPE size_t // if chnage to unsigned int change the grid.x and gID in cuda kernel computation to long
 
 #include <vector>
 #include <algorithm>
@@ -137,7 +137,7 @@ public:
     ITYPE nTile = 1;
     ITYPE tileSize;
     ITYPE gridSize = 512;
-    ITYPE TBsize = 512;
+    ITYPE TBsize = 128;
     ITYPE MIfbTh = 1;
     bool verbose = false;     // if true change matrix rand() to 1
     bool correctness = false; 
@@ -147,7 +147,7 @@ public:
     std::string m0 = "012";
     std::string m1 = "120";
     std::string m2 = "201";
-    bool useMPI = true;
+    bool useMPI = false;
     bool natOrdering = false;
     ITYPE fbrThreashold = 99999999;
 
@@ -174,7 +174,7 @@ public:
     }
 };
 
-inline int check_opt(const Tensor &X, const Options &Opt){
+inline int check_opt(const Tensor &X, Options &Opt){
     
     if(X.ndims > 4){
         cout << "Supported tensor dimension is 3 or 4." << endl;
@@ -241,10 +241,10 @@ inline int order_tensormode(Tensor &X, const Options &Opt, const int mode){
             X.modeOrder.push_back(sortMode[i]);
     }
 
-    // cout << "mode ordering: ";
-    // for (int i = 0; i < X.ndims; ++i)
-    //     cout << X.modeOrder[i] << " ";
-    // cout << endl;
+    cout << "mode ordering: ";
+    for (int i = 0; i < X.ndims; ++i)
+        cout << X.modeOrder[i] << " ";
+    cout << endl;
 }
 
 inline int load_tensor(Tensor &X, const Options &Opt){
@@ -3065,7 +3065,7 @@ inline void correctness_check(DTYPE *out, DTYPE *COOout, int nr, int nc){
                 if(diff > maxDiff)
                     maxDiff = diff;
                 if(mismatch < 5 && j == 0)
-                  cout << "mismatch at (" << i <<"," << j <<") got: " << out[i * nc +j] << " exp: " << COOout[i * nc +j] << endl;
+                  cout << "mismatch at (" << i <<"," << j <<") got: " << out[i * nc +j] << " exp: " << COOout[i * nc +j] << ". "<< endl;
                 mismatch++;
                 // exit(0);
             }          
@@ -3075,8 +3075,8 @@ inline void correctness_check(DTYPE *out, DTYPE *COOout, int nr, int nc){
     if(mismatch == 0)
         cout << "Correctness pass!" << endl;
     else{
-        cout <<  mismatch <<" mismatches found at " << precision << " precision" << endl;
-        cout << "Maximum diff " << maxDiff << endl;
+        cout <<  mismatch <<" mismatches found at " << precision << " precision. " << endl;
+        cout << "Maximum diff " << maxDiff << ". "<<endl;
     }
 }
 

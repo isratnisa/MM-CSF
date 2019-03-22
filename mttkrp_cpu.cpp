@@ -72,6 +72,49 @@ int MTTKRP_COO_CPU_4D(const Tensor &X, Matrix *U, const Options &Opt){
     }
 }
 
+
+int MTTKRP_HCSR_CPU_slc(const Tensor &X, const TiledTensor *TiledX, Matrix *U, const Options &Opt){
+        
+    ITYPE mode0 = X.modeOrder[0];
+    ITYPE mode1 = X.modeOrder[1];
+    ITYPE mode2 = X.modeOrder[2];
+    ITYPE R = Opt.R;
+
+     cout << "mode 0: " << mode0 << " " << mode1 <<" " << mode2 << endl;
+
+     // MTTKRP_HCSR_CPU_RSTRCT(const Tensor &X, U[], const Options &Opt)
+    DTYPE * U0 = U[mode0].vals;
+    DTYPE const * const  U1 = U[mode1].vals;
+    DTYPE const * const  U2 = U[mode2].vals;
+ 
+    DTYPE *tmp_val = new DTYPE[R];
+    DTYPE *outBuffer = new DTYPE[R];
+
+    // #pragma omp for
+    for (int fbr = 0; fbr <  X.nFibers; ++fbr){
+
+        memset(tmp_val, 0, R * sizeof(DTYPE));
+        
+        ITYPE idx1 = X.fbrIdx[1][fbr];
+        ITYPE idx0 = X.fbrLikeSlcInds[fbr]; //2S +2F + M  now 3F + M
+       
+        for(ITYPE r=0; r<R; ++r){
+            tmp_val[r] = 0;
+        }
+         
+        for(ITYPE x = X.fbrPtr[1][fbr]; x < X.fbrPtr[1][fbr+1]; ++x) {
+
+            ITYPE idx2 = X.inds[mode2][x];  
+
+            for(ITYPE r=0; r<R; ++r) 
+                tmp_val[r] += X.vals[x] * U2[idx2 * R + r]; 
+        }
+
+        for(ITYPE r=0; r<R; ++r) 
+             U0[idx0 * R + r] += tmp_val[r] * U1[idx1 * R + r];           
+    }
+}
+
 int MTTKRP_HCSR_CPU(const Tensor &X, const TiledTensor *TiledX, Matrix *U, const Options &Opt){
 
     // if(Opt.impType == 11)

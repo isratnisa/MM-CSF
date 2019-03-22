@@ -17,10 +17,10 @@ int main(int argc, char* argv[]){
  
     cudaDeviceSetCacheConfig(cudaFuncCachePreferL1);
     Options Opt = parse_cmd_options(argc, argv);
-    check_opt(Opt); //check options are good
 
     Tensor X;
     load_tensor(X, Opt);
+    check_opt(X, Opt); //check options are good
     sort_COOtensor(X);
     
     if(Opt.useMPI){
@@ -162,6 +162,7 @@ int main(int argc, char* argv[]){
             
             cout << "Sorted mode: " << X.modeOrder[0] << " " << X.modeOrder[1] << " " <<X.modeOrder[2] << endl;
             create_fbrLikeSlcInds(TiledX, 0);
+            create_fbrLikeSlcInds(X, Opt);
             MTTKRP_B_HCSR_GPU(TiledX, U, Opt);
         }
 
@@ -361,7 +362,7 @@ int main(int argc, char* argv[]){
             exit(0);
         }
         if(Opt.verbose && (Opt.impType == 12 || Opt.impType == 14))
-            cout << "checking only the last mode" << endl;
+            cout << "checking only the last mode. " << endl;
         // Opt.mode = 0;//X.modeOrder[2];
         Opt.mode = ((Opt.impType == 12 || Opt.impType == 14 ) ? X.ndims-1 : Opt.mode);
         int mode = Opt.mode;
@@ -373,8 +374,9 @@ int main(int argc, char* argv[]){
         randomize_mats(X, U, Opt);
         zero_mat(X, U, mode);
 
-        cout << "correctness with COO on mode " << mode << endl;
+        cout << "correctness with COO on mode " << mode <<". "<< endl;
         ((X.ndims == 3) ?  MTTKRP_COO_CPU(X, U, Opt) :  MTTKRP_COO_CPU_4D(X, U, Opt));
+         // MTTKRP_HCSR_CPU_slc(X, TiledX, U, Opt);
         print_matrix(U, mode);
         correctness_check(out, U[mode].vals, nr, nc);
     }

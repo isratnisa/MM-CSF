@@ -659,14 +659,16 @@ __global__ void mttkrp_HCSR_kernel_hvyBin_4D(DTYPE * vals, ITYPE *dfbrIdx0, ITYP
 
 // CUDA fbr atomic sing slcLikeFbr
 __global__ void mttkrp_MIHCSR_kernel_slc_atomic_fbrLvlPar(DTYPE * vals, ITYPE *fbrLikeSlcInds, ITYPE *dInds2, 
-	ITYPE *fbrPtr0, ITYPE *fbrPtr1, ITYPE *fbrIdx1, unsigned int nFibers, DTYPE *dU0, DTYPE * dU1, DTYPE *dU2, 
+	ITYPE *fbrPtr0, ITYPE *fbrPtr1, ITYPE *fbrIdx1, ITYPE nFibers, DTYPE *dU0, DTYPE * dU1, DTYPE *dU2, 
 	ITYPE	mode, ITYPE R, ITYPE warpPerSlice, int logOfWPC, int fbrPerWarp, int logOfFPW){
 
-	unsigned int tId = threadIdx.x;
-	unsigned int laneId = tId & 31;
-	unsigned int gId = (blockIdx.x * blockDim.x + tId);
-	unsigned int workId = (tId & ((1 << (5 + logOfWPC)) - 1)) >> 5;  //tId >> 5; //tId >> 5;//
-	unsigned int fbr = (gId >> (5 + logOfWPC)) << logOfFPW; // 5: minimum 1 WARP (2^5) // blockIdx.x ;//
+	ITYPE tId = threadIdx.x;
+	ITYPE laneId = tId & 31;
+	ITYPE bdim = blockDim.x;
+	ITYPE gId = (blockIdx.x * bdim + tId);
+	ITYPE workId = (tId & ((1 << (5 + logOfWPC)) - 1)) >> 5;  //tId >> 5; //tId >> 5;//
+	ITYPE fbr = (gId >> (5 + logOfWPC)) << logOfFPW; // 5: minimum 1 WARP (2^5) // blockIdx.x ;//
+	
 	DTYPE tmp = 0, tmp_val;
 		              	              
 	if(fbr < nFibers - 1){ 	    
@@ -681,6 +683,7 @@ __global__ void mttkrp_MIHCSR_kernel_slc_atomic_fbrLvlPar(DTYPE * vals, ITYPE *f
 			unsigned int idx1 = fbrIdx1[fbr+fr];// dInds1[fbrPtr1[fbr]];  
 			idx0 = fbrLikeSlcInds[fbr+fr];//slc;  
  			tmp_val = 0;
+ 			
 	        for(unsigned int x = fbrPtr1[fbr+fr] + workId; x < fbrPtr1[fbr+fr+1]; x+=warpPerSlice) {
 
 		        unsigned int idx2 = dInds2[x];                    
@@ -714,14 +717,15 @@ __global__ void mttkrp_MIHCSR_kernel_slc_atomic_fbrLvlPar(DTYPE * vals, ITYPE *f
 
 // CUDA fbr atomic sing slcLikeFbr
 __global__ void mttkrp_MIHCSR_kernel_slc_atomic_fbrLvlPar_4D(DTYPE * vals, ITYPE *fbrLikeSlcInds, ITYPE *dInds3, 
-	ITYPE *fbrPtr0, ITYPE *fbrPtr1, ITYPE *fbrIdx1, ITYPE *fbrPtr2, ITYPE *fbrIdx2, unsigned int nFibers, DTYPE *dU0, 
+	ITYPE *fbrPtr0, ITYPE *fbrPtr1, ITYPE *fbrIdx1, ITYPE *fbrPtr2, ITYPE *fbrIdx2, ITYPE nFibers, DTYPE *dU0, 
 	DTYPE * dU1, DTYPE *dU2, DTYPE *dU3, ITYPE	mode, ITYPE R, ITYPE warpPerSlice, int logOfWPC, int fbrPerWarp, int logOfFPW){
 
-	unsigned int tId = threadIdx.x;
-	unsigned int laneId = tId & 31;
-	unsigned int gId = (blockIdx.x * blockDim.x + tId);
-	unsigned int workId = (tId & ((1 << (5 + logOfWPC)) - 1)) >> 5;  //tId >> 5; //tId >> 5;//
-	unsigned int fbrS = (gId >> (5 + logOfWPC)) << logOfFPW; // 5: minimum 1 WARP (2^5) // blockIdx.x ;//
+	ITYPE tId = threadIdx.x;
+	ITYPE laneId = tId & 31;
+	ITYPE bdim = blockDim.x;
+	ITYPE gId = (blockIdx.x * bdim + tId);
+	ITYPE workId = (tId & ((1 << (5 + logOfWPC)) - 1)) >> 5;  //tId >> 5; //tId >> 5;//
+	ITYPE fbrS = (gId >> (5 + logOfWPC)) << logOfFPW; // 5: minimum 1 WARP (2^5) // blockIdx.x ;//
 	DTYPE tmp = 0, tmp_val, tmp2= 0;
 		              	              
 	if(fbrS < nFibers - 1){ 	    
@@ -777,14 +781,15 @@ __global__ void mttkrp_MIHCSR_kernel_slc_atomic_fbrLvlPar_4D(DTYPE * vals, ITYPE
 
 // CUDA kernel call to do HCSR MTTKRP 
 __global__ void mttkrp_MIHCSR_kernel_smllBin_fbr_atomic(DTYPE * vals, ITYPE *dfbrIdx0, ITYPE *dSlcMapperBin, ITYPE *dInds2, ITYPE *fbrPtr0,
-	ITYPE *fbrPtr1, ITYPE *fbrIdx1, unsigned int nSlices, DTYPE *dU0, DTYPE * dU1, DTYPE *dU2, 
+	ITYPE *fbrPtr1, ITYPE *fbrIdx1, ITYPE nSlices, DTYPE *dU0, DTYPE * dU1, DTYPE *dU2, 
 	ITYPE	mode, ITYPE R, ITYPE warpPerSlice, int logOfWPC, int TbPerSlc, int LogOfTPS){
 
-	unsigned int tId = threadIdx.x;
-	unsigned int laneId = tId & 31;
-	unsigned int gId = (blockIdx.x * blockDim.x + tId);
-	unsigned int workId = (tId & ((1 << (5 + logOfWPC)) - 1)) >> 5;  
-	unsigned int slc = gId >> (5 + logOfWPC); // 5: minimum 1 WARP (2^5) 
+	ITYPE tId = threadIdx.x;
+	ITYPE laneId = tId & 31;
+	ITYPE bdim = blockDim.x;
+	ITYPE gId = (blockIdx.x * bdim + tId);
+	ITYPE workId = (tId & ((1 << (5 + logOfWPC)) - 1)) >> 5;  
+	ITYPE slc = gId >> (5 + logOfWPC); // 5: minimum 1 WARP (2^5) 
 	DTYPE tmp = 0, tmp_val;
 		              	              
 	if(slc < nSlices){ 	    
@@ -817,14 +822,15 @@ __global__ void mttkrp_MIHCSR_kernel_smllBin_fbr_atomic(DTYPE * vals, ITYPE *dfb
 
 // CUDA fbr atomic sing slcLikeFbr
 __global__ void mttkrp_MIHCSR_kernel_fbr_atomic_fbrLvlPar(DTYPE * vals, ITYPE *fbrLikeSlcInds, ITYPE *dInds2, 
-	ITYPE *fbrPtr0, ITYPE *fbrPtr1, ITYPE *fbrIdx1, unsigned int nFibers, DTYPE *dU0, DTYPE * dU1, DTYPE *dU2, 
+	ITYPE *fbrPtr0, ITYPE *fbrPtr1, ITYPE *fbrIdx1, ITYPE nFibers, DTYPE *dU0, DTYPE * dU1, DTYPE *dU2, 
 	ITYPE	mode, ITYPE R, ITYPE warpPerSlice, int logOfWPC){
 
-	unsigned int tId = threadIdx.x;
-	unsigned int laneId = tId & 31;
-	unsigned int gId = (blockIdx.x * blockDim.x + tId);
-	unsigned int workId = (tId & ((1 << (5 + logOfWPC)) - 1)) >> 5;  //tId >> 5; //tId >> 5;//
-	unsigned int fbr = gId >> (5 + logOfWPC); // 5: minimum 1 WARP (2^5) // blockIdx.x ;//
+	ITYPE tId = threadIdx.x;
+	ITYPE laneId = tId & 31;
+	ITYPE bdim = blockDim.x;
+	ITYPE gId = (blockIdx.x * bdim + tId);
+	ITYPE workId = (tId & ((1 << (5 + logOfWPC)) - 1)) >> 5;  //tId >> 5; //tId >> 5;//
+	ITYPE fbr = gId >> (5 + logOfWPC); // 5: minimum 1 WARP (2^5) // blockIdx.x ;//
 	DTYPE tmp = 0, tmp_val;
 		              	              
 	if(fbr < nFibers - 1){ 	    
@@ -850,14 +856,15 @@ __global__ void mttkrp_MIHCSR_kernel_fbr_atomic_fbrLvlPar(DTYPE * vals, ITYPE *f
 
 // CUDA fbr atomic sing slcLikeFbr
 __global__ void mttkrp_MIHCSR_kernel_fbr_atomic_fbrLvlPar_4D(DTYPE * vals, ITYPE *fbrLikeSlcInds,  ITYPE *dInds3, 
-	ITYPE *fbrPtr0, ITYPE *fbrPtr1, ITYPE *fbrIdx1, ITYPE *fbrPtr2, ITYPE *fbrIdx2, unsigned int nFibers, DTYPE *dU0,
+	ITYPE *fbrPtr0, ITYPE *fbrPtr1, ITYPE *fbrIdx1, ITYPE *fbrPtr2, ITYPE *fbrIdx2, ITYPE nFibers, DTYPE *dU0,
 	 DTYPE * dU1, DTYPE *dU2, DTYPE *dU3, ITYPE	mode, ITYPE R, ITYPE warpPerSlice, int logOfWPC){
 
-	unsigned int tId = threadIdx.x;
-	unsigned int laneId = tId & 31;
-	unsigned int gId = (blockIdx.x * blockDim.x + tId);
-	unsigned int workId = (tId & ((1 << (5 + logOfWPC)) - 1)) >> 5;  //tId >> 5; //tId >> 5;//
-	unsigned int fbrS = gId >> (5 + logOfWPC); // 5: minimum 1 WARP (2^5) // blockIdx.x ;//
+	ITYPE tId = threadIdx.x;
+	ITYPE laneId = tId & 31;
+	ITYPE bdim = blockDim.x;
+	ITYPE gId = (blockIdx.x * bdim + tId);
+	ITYPE workId = (tId & ((1 << (5 + logOfWPC)) - 1)) >> 5;  //tId >> 5; //tId >> 5;//
+	ITYPE fbrS = gId >> (5 + logOfWPC); // 5: minimum 1 WARP (2^5) // blockIdx.x ;//
 	DTYPE tmp = 0, tmp_val, tmp2 = 0;
 		              	              
 	if(fbrS < nFibers - 1){ 	    
@@ -888,14 +895,15 @@ __global__ void mttkrp_MIHCSR_kernel_fbr_atomic_fbrLvlPar_4D(DTYPE * vals, ITYPE
 
 // CUDA fbr atomic sing slcLikeFbr
 __global__ void mttkrp_MIHCSR_kernel_fbrS_atomic_fbrLvlPar_4D(DTYPE * vals, ITYPE *fbrLikeSlcInds,  ITYPE *dInds3, 
-	ITYPE *fbrPtr0, ITYPE *fbrPtr1, ITYPE *fbrIdx1, ITYPE *fbrPtr2, ITYPE *fbrIdx2, unsigned int nFibers, DTYPE *dU0,
+	ITYPE *fbrPtr0, ITYPE *fbrPtr1, ITYPE *fbrIdx1, ITYPE *fbrPtr2, ITYPE *fbrIdx2, ITYPE nFibers, DTYPE *dU0,
 	 DTYPE * dU1, DTYPE *dU2, DTYPE *dU3, ITYPE	mode, ITYPE R, ITYPE warpPerSlice, int logOfWPC){
 
-	unsigned int tId = threadIdx.x;
-	unsigned int laneId = tId & 31;
-	unsigned int gId = (blockIdx.x * blockDim.x + tId);
-	unsigned int workId = (tId & ((1 << (5 + logOfWPC)) - 1)) >> 5;  //tId >> 5; //tId >> 5;//
-	unsigned int fbrS = gId >> (5 + logOfWPC); // 5: minimum 1 WARP (2^5) // blockIdx.x ;//
+	ITYPE tId = threadIdx.x;
+	ITYPE laneId = tId & 31;
+	ITYPE bdim = blockDim.x;
+	ITYPE gId = (blockIdx.x * bdim + tId);
+	ITYPE workId = (tId & ((1 << (5 + logOfWPC)) - 1)) >> 5;  //tId >> 5; //tId >> 5;//
+	ITYPE fbrS = gId >> (5 + logOfWPC); // 5: minimum 1 WARP (2^5) // blockIdx.x ;//
 	DTYPE tmp = 0, tmp_val, tmp2 = 0;
 		              	              
 	if(fbrS < nFibers - 1){ 	    
@@ -926,12 +934,13 @@ __global__ void mttkrp_MIHCSR_kernel_fbrS_atomic_fbrLvlPar_4D(DTYPE * vals, ITYP
 
 // CUDA fbr atomic sing slcLikeFbr
 __global__ void mttkrp_MIHCSR_kernel_fbr_atomic_fbrLvlPar_loop(DTYPE * vals, ITYPE *fbrLikeSlcInds, ITYPE *dInds2, 
-	ITYPE *fbrPtr0, ITYPE *fbrPtr1, ITYPE *fbrIdx1, unsigned int nFibers, DTYPE *dU0, DTYPE * dU1, DTYPE *dU2, 
+	ITYPE *fbrPtr0, ITYPE *fbrPtr1, ITYPE *fbrIdx1, ITYPE nFibers, DTYPE *dU0, DTYPE * dU1, DTYPE *dU2, 
 	ITYPE	mode, ITYPE R, ITYPE warpPerSlice, int logOfWPC){
 
-	unsigned int tId = threadIdx.x;
-	unsigned int laneId = tId & 31;
-	unsigned int gId = (blockIdx.x * blockDim.x + tId);
+	ITYPE tId = threadIdx.x;
+	ITYPE laneId = tId & 31;
+	ITYPE bdim = blockDim.x;
+	ITYPE gId = (blockIdx.x * bdim + tId);
 
 	//like PARTI
 	//hardcoded for 1 warp per nnz
@@ -973,13 +982,13 @@ __global__ void mttkrp_MIHCSR_kernel_fbr_atomic_fbrLvlPar_loop(DTYPE * vals, ITY
 
 // CUDA kernel call to do HCSR MTTKRP 
 __global__ void mttkrp_MIHCSR_kernel_hvyBin_fbr_atomic(DTYPE * vals, ITYPE *dfbrIdx0, ITYPE *dSlcMapperBin, ITYPE *dInds2, ITYPE *fbrPtr0,
-	ITYPE *fbrPtr1, ITYPE *fbrIdx1, unsigned int nSlices, DTYPE *dU0, DTYPE * dU1, DTYPE *dU2, 
+	ITYPE *fbrPtr1, ITYPE *fbrIdx1, ITYPE nSlices, DTYPE *dU0, DTYPE * dU1, DTYPE *dU2, 
 	ITYPE	mode, ITYPE R, ITYPE warpPerSlice, int logOfWPC, int TbPerSlc, int logOfTPS){
 	
-	unsigned int laneId = threadIdx.x & 31;
-	unsigned int workId = threadIdx.x >> 5;
-	unsigned int slc = blockIdx.x >> logOfTPS;
-	unsigned int localBId = blockIdx.x & (TbPerSlc -1);
+	ITYPE laneId = threadIdx.x & 31;
+	ITYPE workId = threadIdx.x >> 5;
+	ITYPE slc = blockIdx.x >> logOfTPS;
+	ITYPE localBId = blockIdx.x & (TbPerSlc -1);
 	
 	DTYPE tmp = 0, tmp_val;
 		              	              
@@ -1015,16 +1024,17 @@ __global__ void mttkrp_MIHCSR_kernel_hvyBin_fbr_atomic(DTYPE * vals, ITYPE *dfbr
 
 // CUDA kernel call to do HCSR MTTKRP 
 __global__ void mttkrp_MIHCSR_kernel_smllBin_all_atomic(DTYPE * vals, ITYPE *dfbrIdx0, ITYPE *dSlcMapperBin, ITYPE *dInds2, ITYPE *fbrPtr0,
-	ITYPE *fbrPtr1, ITYPE *fbrIdx1, unsigned int nSlices, DTYPE *dU0, DTYPE * dU1, DTYPE *dU2, 
+	ITYPE *fbrPtr1, ITYPE *fbrIdx1, ITYPE nSlices, DTYPE *dU0, DTYPE * dU1, DTYPE *dU2, 
 	ITYPE	mode, ITYPE R, ITYPE warpPerSlice, int logOfWPC, int TbPerSlc, int LogOfTPS){
 
-	unsigned int tId = threadIdx.x;
-	unsigned int laneId = tId & 31;
-	unsigned int gId = (blockIdx.x * blockDim.x + tId);
-	unsigned int workId = (tId & ((1 << (5 + logOfWPC)) - 1)) >> 5;  
-	unsigned int slc = gId >> (5 + logOfWPC); // 5: minimum 1 WARP (2^5) 
-	// unsigned int slcPerTb = 16/warpPerSlice;
-	// unsigned int shSlc = slc & slcPerTb;
+	ITYPE tId = threadIdx.x;
+	ITYPE laneId = tId & 31;
+	ITYPE bdim = blockDim.x;
+	ITYPE gId = (blockIdx.x * bdim + tId);
+	ITYPE workId = (tId & ((1 << (5 + logOfWPC)) - 1)) >> 5;  
+	ITYPE slc = gId >> (5 + logOfWPC); // 5: minimum 1 WARP (2^5) 
+	// ITYPE slcPerTb = 16/warpPerSlice;
+	// ITYPE shSlc = slc & slcPerTb;
 	DTYPE tmp_val;
 		              	              
 	if(slc < nSlices){ 	    
@@ -1057,14 +1067,15 @@ __global__ void mttkrp_MIHCSR_kernel_smllBin_all_atomic(DTYPE * vals, ITYPE *dfb
 
 // CUDA fbr atomic sing slcLikeFbr
 __global__ void mttkrp_MIHCSR_kernel_all_atomic_fbrLvlPar(DTYPE * vals, ITYPE *fbrLikeSlcInds, ITYPE *dInds2, 
-	ITYPE *fbrPtr0, ITYPE *fbrPtr1, ITYPE *fbrIdx1, unsigned int nFibers, DTYPE *dU0, DTYPE * dU1, DTYPE *dU2, 
+	ITYPE *fbrPtr0, ITYPE *fbrPtr1, ITYPE *fbrIdx1, ITYPE nFibers, DTYPE *dU0, DTYPE * dU1, DTYPE *dU2, 
 	ITYPE	mode, ITYPE R, ITYPE warpPerSlice, int logOfWPC){
 
-	unsigned int tId = threadIdx.x;
-	unsigned int laneId = tId & 31;
-	unsigned int gId = (blockIdx.x * blockDim.x + tId);
-	unsigned int workId = (tId & ((1 << (5 + logOfWPC)) - 1)) >> 5;  //tId >> 5; //tId >> 5;//
-	unsigned int fbr = gId >> (5 + logOfWPC); // 5: minimum 1 WARP (2^5) // blockIdx.x ;//
+	ITYPE tId = threadIdx.x;
+	ITYPE laneId = tId & 31;
+	ITYPE bdim = blockDim.x;
+	ITYPE gId = (blockIdx.x * bdim + tId);
+	ITYPE workId = (tId & ((1 << (5 + logOfWPC)) - 1)) >> 5;  //tId >> 5; //tId >> 5;//
+	ITYPE fbr = gId >> (5 + logOfWPC); // 5: minimum 1 WARP (2^5) // blockIdx.x ;//
 	DTYPE tmp = 0, tmp_val;
 		              	              
 	if(fbr < nFibers - 1){ 	    
@@ -1090,14 +1101,15 @@ __global__ void mttkrp_MIHCSR_kernel_all_atomic_fbrLvlPar(DTYPE * vals, ITYPE *f
 
 // CUDA fbr atomic sing slcLikeFbr
 __global__ void mttkrp_MIHCSR_kernel_all_atomic_fbrLvlPar_4D(DTYPE * vals, ITYPE *fbrLikeSlcInds,  ITYPE *dInds3, 
-	ITYPE *fbrPtr0, ITYPE *fbrPtr1, ITYPE *fbrIdx1, ITYPE *fbrPtr2, ITYPE *fbrIdx2, unsigned int nFibers, DTYPE *dU0,
+	ITYPE *fbrPtr0, ITYPE *fbrPtr1, ITYPE *fbrIdx1, ITYPE *fbrPtr2, ITYPE *fbrIdx2, ITYPE nFibers, DTYPE *dU0,
 	 DTYPE * dU1, DTYPE *dU2, DTYPE *dU3, ITYPE	mode, ITYPE R, ITYPE warpPerSlice, int logOfWPC){
 
-	unsigned int tId = threadIdx.x;
-	unsigned int laneId = tId & 31;
-	unsigned int gId = (blockIdx.x * blockDim.x + tId);
-	unsigned int workId = (tId & ((1 << (5 + logOfWPC)) - 1)) >> 5;  //tId >> 5; //tId >> 5;//
-	unsigned int fbrS = gId >> (5 + logOfWPC); // 5: minimum 1 WARP (2^5) // blockIdx.x ;//
+	ITYPE tId = threadIdx.x;
+	ITYPE laneId = tId & 31;
+	ITYPE bdim = blockDim.x;
+	ITYPE gId = (blockIdx.x * bdim + tId);
+	ITYPE workId = (tId & ((1 << (5 + logOfWPC)) - 1)) >> 5;  //tId >> 5; //tId >> 5;//
+	ITYPE fbrS = gId >> (5 + logOfWPC); // 5: minimum 1 WARP (2^5) // blockIdx.x ;//
 	DTYPE tmp = 0, tmp_val = 0;;
 		              	              
 	if(fbrS < nFibers - 1){ 	    
@@ -1126,14 +1138,15 @@ __global__ void mttkrp_MIHCSR_kernel_all_atomic_fbrLvlPar_4D(DTYPE * vals, ITYPE
 
 // CUDA fbr atomic sing slcLikeFbr
 __global__ void mttkrp_MIHCSR_kernel_all_atomic_fbrLvlPar_loop(DTYPE * vals, ITYPE *fbrLikeSlcInds, ITYPE *dInds2, 
-	ITYPE *fbrPtr0, ITYPE *fbrPtr1, ITYPE *fbrIdx1, unsigned int nFibers, DTYPE *dU0, DTYPE * dU1, DTYPE *dU2, 
+	ITYPE *fbrPtr0, ITYPE *fbrPtr1, ITYPE *fbrIdx1, ITYPE nFibers, DTYPE *dU0, DTYPE * dU1, DTYPE *dU2, 
 	ITYPE	mode, ITYPE R, ITYPE warpPerSlice, int logOfWPC){
 
-	unsigned int tId = threadIdx.x;
-	unsigned int laneId = tId & 31;
-	unsigned int gId = (blockIdx.x * blockDim.x + tId);
-	unsigned int warpId = (tId & ((1 << (5 + logOfWPC)) - 1)) >> 5;  //tId >> 5; //
-	unsigned int blockId = gId >> (5 + logOfWPC); // 5: minimum 1 WARP (2^5) //blockIdx.x ;//
+	ITYPE tId = threadIdx.x;
+	ITYPE laneId = tId & 31;
+	ITYPE bdim = blockDim.x;
+	ITYPE gId = (blockIdx.x * bdim + tId);
+	ITYPE warpId = (tId & ((1 << (5 + logOfWPC)) - 1)) >> 5;  //tId >> 5; //
+	ITYPE blockId = gId >> (5 + logOfWPC); // 5: minimum 1 WARP (2^5) //blockIdx.x ;//
 
 	//like PARTI
 	//hardcoded for 1 warp per nnz
@@ -1175,13 +1188,13 @@ __global__ void mttkrp_MIHCSR_kernel_all_atomic_fbrLvlPar_loop(DTYPE * vals, ITY
 
 // CUDA kernel call to do HCSR MTTKRP 
 __global__ void mttkrp_MIHCSR_kernel_hvyBin_all_atomic(DTYPE * vals, ITYPE *dfbrIdx0, ITYPE *dSlcMapperBin, ITYPE *dInds2, ITYPE *fbrPtr0,
-	ITYPE *fbrPtr1, ITYPE *fbrIdx1, unsigned int nSlices, DTYPE *dU0, DTYPE * dU1, DTYPE *dU2, 
+	ITYPE *fbrPtr1, ITYPE *fbrIdx1, ITYPE nSlices, DTYPE *dU0, DTYPE * dU1, DTYPE *dU2, 
 	ITYPE	mode, ITYPE R, ITYPE warpPerSlice, int logOfWPC, int TbPerSlc, int logOfTPS){
 	
-	unsigned int laneId = threadIdx.x & 31;
-	unsigned int workId = threadIdx.x >> 5;
-	unsigned int slc = blockIdx.x >> logOfTPS;
-	unsigned int localBId = blockIdx.x & (TbPerSlc -1);
+	ITYPE laneId = threadIdx.x & 31;
+	ITYPE workId = threadIdx.x >> 5;
+	ITYPE slc = blockIdx.x >> logOfTPS;
+	ITYPE localBId = blockIdx.x & (TbPerSlc -1);
 	
 	DTYPE tmp = 0, tmp_val;
 		              	              
@@ -1682,24 +1695,25 @@ int MTTKRP_B_HCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 			dFbrLoc2 += ((TiledX[0].ndims == 4) ? TiledX[tile - 1].fbrPtr[2].size() : 0) ;
 		}
 
-		BLOCKSIZE = (( slcAtomicFbrLvlPar == true) ? 256 : 512) ;
+		BLOCKSIZE = (( slcAtomicFbrLvlPar == true) ? Opt.TBsize : 512) ;
 		dim3 block(BLOCKSIZE, 1, 1), grid(1, 1, 1);
 
 		int smallBinEndsAt = 5;
 		int slcPerTb = 0;
 
-		int warpPerFbr = 1;//BLOCKSIZE/32;//1;//Opt.warpPerSlice;//4;//;
+		int warpPerFbr = BLOCKSIZE/32;//1;//Opt.warpPerSlice;//4;//;
 		int logOfWarpPerFbr = log2(warpPerFbr);
 		int bin = 0;
-		int fbrPerWarp = BLOCKSIZE/32; // dont overflow TB
-		int logOfFbrPerWarp = log2(fbrPerWarp );
-
+		int fbrPerWarp = 1;//BLOCKSIZE/32; // dont overflow TB
+		int logOfFbrPerWarp = log2(fbrPerWarp);	
+		
 		grid.x = ( warpPerFbr * 32 * ((TiledX[tile].nFibers+fbrPerWarp-1)/fbrPerWarp) + BLOCKSIZE - 1) / BLOCKSIZE;
 
 		double t0 = seconds();
 		cuda_timer_start(start);
 		
 		if(slcAtomicFbrLvlPar){
+
 			if(TiledX[0].ndims == 3)
 				mttkrp_MIHCSR_kernel_slc_atomic_fbrLvlPar<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dFbrLikeSlcInds + dFbrLoc, 
 				dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[tile].nFibers, 
@@ -2316,7 +2330,7 @@ int MTTKRP_ONE_HCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 
 		if(performMTTKRPMode && TiledX[0].modeOrder[0] == MTTKRPmode){
 
-			if(Opt.verbose)
+			// if(Opt.verbose)
 				cout << "Slc atomics - " ;
 			
 			for (int tile = 0; tile < Opt.nTile; ++tile){
@@ -2336,11 +2350,11 @@ int MTTKRP_ONE_HCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 				dim3 block(BLOCKSIZE, 1, 1), grid(1, 1, 1);
 				int smallBinEndsAt = 5;
 				int slcPerTb = 0;
-				int warpPerFbr = 1;//BLOCKSIZE/32;//1;//Opt.warpPerSlice;//4;//;
+				int warpPerFbr = BLOCKSIZE/32;//1;//Opt.warpPerSlice;//4;//;
 				int logOfWarpPerFbr = log2(warpPerFbr);
 				int bin = 0;
 				bool useLoop = false;
-				int fbrPerWarp = BLOCKSIZE/32; // dont overflow TB
+				int fbrPerWarp = 1;//BLOCKSIZE/32; // dont overflow TB
 				int logOfFbrPerWarp = log2(fbrPerWarp );		
 
 				/* Like PARTI loop */ 
@@ -2380,7 +2394,7 @@ int MTTKRP_ONE_HCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 		/*processing fbrS level for 4D tensor*/
 		else if(TiledX[0].ndims == 4 && performMTTKRPnMode && TiledX[0].modeOrder[1] == MTTKRPmode){
 
-			if(Opt.verbose)
+			// if(Opt.verbose)
 				cout << "FbrS atomics - " ;
 
 			mili = 0, GPUTime = 0, CPUtimer = 0;
@@ -2400,12 +2414,12 @@ int MTTKRP_ONE_HCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 				}
 				// cout <<"might wanna change binning style and Block size, logWPC, COO like parallelism, allow mode sort" << endl;
 
-				BLOCKSIZE = 128;//Opt.TBsize;
+				BLOCKSIZE = Opt.TBsize;
 				dim3 block(BLOCKSIZE, 1, 1), grid(1, 1, 1);
 
 				int smallBinEndsAt = 5;
 				int slcPerTb = 0;
-				int warpPerFbr = 4;//BLOCKSIZE/32;//1;//Opt.warpPerSlice;//4;//;
+				int warpPerFbr = BLOCKSIZE/32;//1;//Opt.warpPerSlice;//4;//;
 				int logOfWarpPerFbr = log2(warpPerFbr);
 				int bin = 0;
 
@@ -2435,7 +2449,7 @@ int MTTKRP_ONE_HCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 
 		else if(performMTTKRPnMode && TiledX[0].modeOrder[TiledX[0].ndims-2] == MTTKRPmode){
 
-			if(Opt.verbose)
+			// if(Opt.verbose)
 				cout << "Fbr atomics - " ;
 
 			mili = 0, GPUTime = 0, CPUtimer = 0;
@@ -2455,12 +2469,12 @@ int MTTKRP_ONE_HCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 				}
 				// cout <<"might wanna change binning style and Block size, logWPC, COO like parallelism, allow mode sort" << endl;
 
-				BLOCKSIZE = 128;//Opt.TBsize;
+				BLOCKSIZE = Opt.TBsize;
 				dim3 block(BLOCKSIZE, 1, 1), grid(1, 1, 1);
 
 				int smallBinEndsAt = 5;
 				int slcPerTb = 0;
-				int warpPerFbr = 1;//BLOCKSIZE/32;//1;//Opt.warpPerSlice;//4;//;
+				int warpPerFbr = BLOCKSIZE/32;//1;//Opt.warpPerSlice;//4;//;
 				int logOfWarpPerFbr = log2(warpPerFbr);
 				int bin = 0;
 				bool useLoop = false;
@@ -2509,7 +2523,7 @@ int MTTKRP_ONE_HCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 
 		else if(performMTTKRPnnMode && TiledX[0].modeOrder[TiledX[0].ndims-1] == MTTKRPmode){
 
-			if(Opt.verbose)
+			// if(Opt.verbose)
 				cout << "Nnz atomics - " ;
 
 			mili = 0, GPUTime = 0, CPUtimer = 0;
@@ -2528,13 +2542,13 @@ int MTTKRP_ONE_HCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 					dFbrLoc2 += ((TiledX[0].ndims == 4) ? TiledX[tile - 1].fbrPtr[2].size() : 0) ;
 				}
 
-				BLOCKSIZE = 128; ///Opt.TBsize;
+				BLOCKSIZE = Opt.TBsize;
 				dim3 block(BLOCKSIZE, 1, 1), grid(1, 1, 1);
 
 				bool useLoop = false;
 				int smallBinEndsAt = 5;
 				int slcPerTb = 0;
-				int warpPerFbr = 1;//Opt.warpPerSlice;//4;//;BLOCKSIZE/32;//
+				int warpPerFbr = BLOCKSIZE/32;//
 				int logOfWarpPerFbr = log2(warpPerFbr);
 				int bin = 0;
 
@@ -2853,7 +2867,8 @@ int MTTKRP_MIHCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 				if(Opt.verbose)
 					cout << "Slc atomics - " ;
 
-				BLOCKSIZE = 128;
+				// BLOCKSIZE = 128;
+				BLOCKSIZE = Opt.TBsize;
 				dim3 block(BLOCKSIZE, 1, 1), grid(1, 1, 1);
 				
 				int warpPerFbr = 1;//BLOCKSIZE/32;//1;//Opt.warpPerSlice;//4;//;
