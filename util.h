@@ -139,6 +139,7 @@ public:
     ITYPE gridSize = 512;
     ITYPE TBsize = 128;
     ITYPE MIfbTh = 1;
+    ITYPE fiberPerWarp = 1;
     bool verbose = false;     // if true change matrix rand() to 1
     bool correctness = false; 
     string inFileName; 
@@ -241,10 +242,12 @@ inline int order_tensormode(Tensor &X, const Options &Opt, const int mode){
             X.modeOrder.push_back(sortMode[i]);
     }
 
-    cout << "mode ordering: ";
-    for (int i = 0; i < X.ndims; ++i)
-        cout << X.modeOrder[i] << " ";
-    cout << endl;
+    if(Opt.verbose){
+        cout << "mode ordering: ";
+        for (int i = 0; i < X.ndims; ++i)
+            cout << X.modeOrder[i] << " ";
+        cout << endl;
+    }
 }
 
 inline int load_tensor(Tensor &X, const Options &Opt){
@@ -2094,9 +2097,19 @@ inline int mm_partition_reuseBased(Tensor *arrX, Tensor &X, TiledTensor *MTX, Op
 
             /* Populate nnz per fiber and nnz per slice */
             for (int fbr = arrX[m].fbrPtr[0][slc]; fbr < arrX[m].fbrPtr[0][slc+1]; ++fbr){      
-               
-                arrX[m].nnzPerFiber[fbr] = arrX[m].fbrPtr[1][fbr+1] - arrX[m].fbrPtr[1][fbr];
-                arrX[m].nnzPerSlice[arrX[m].fbrIdx[0][slc]] += arrX[m].nnzPerFiber[fbr];
+                
+                if(X.ndims == 3){   
+                    arrX[m].nnzPerFiber[fbr] = arrX[m].fbrPtr[1][fbr+1] - arrX[m].fbrPtr[1][fbr];
+                    arrX[m].nnzPerSlice[arrX[m].fbrIdx[0][slc]] += arrX[m].nnzPerFiber[fbr];
+                }
+
+                else if(X.ndims == 4){  
+
+                    for (int fbrIn = arrX[m].fbrPtr[1][fbr]; fbrIn < arrX[m].fbrPtr[1][fbr+1]; ++fbrIn)          
+                        arrX[m].nnzPerFiber[fbr] += arrX[m].fbrPtr[2][fbrIn+1] - arrX[m].fbrPtr[2][fbrIn];
+            
+                    arrX[m].nnzPerSlice[arrX[m].fbrIdx[0][slc]] += arrX[m].nnzPerFiber[fbr];
+                }
             }
         }
         }
@@ -2136,12 +2149,15 @@ inline int mm_partition_reuseBased(Tensor *arrX, Tensor &X, TiledTensor *MTX, Op
     // int *sliceNnz = new int[X.ndims];
     // int tmpSlc;
 
+    //not mode sorted
+    int shortestMode = ( (X.dims[X.modeOrder[0]] <= X.dims[X.modeOrder[1]]) ? X.modeOrder[0] : X.modeOrder[1]) ;
+    cout << shortestMode << " abal " <<  X.modeOrder[0] << " " <<  X.modeOrder[1] << endl;
+
     bool sameFm0m1 = false, sameFm0m2 = false, sameFm1m2 = false, sameFm0m3 = false, 
         sameFm1m3 = false, sameFm2m3 = false;
 
     int fbTh =  Opt.MIfbTh;
     int slTh =  1, shortMode = 0;
-    cout << "fiber threshold: " << fbTh << " MUST CHANGE last else " << endl;
 
     for (int m = 0; m < X.ndims; ++m){
 
@@ -2177,6 +2193,7 @@ inline int mm_partition_reuseBased(Tensor *arrX, Tensor &X, TiledTensor *MTX, Op
         }
     }
     bool casePr = false;
+    int allnnz1 = 0;
     #pragma omp barrier
 
     /******** Process NNZ********s*/
@@ -2191,9 +2208,12 @@ inline int mm_partition_reuseBased(Tensor *arrX, Tensor &X, TiledTensor *MTX, Op
     int mode;
 
     // #pragma omp for 
+
+ 
     for (int idx = 0; idx < X.totNnz; ++idx){
         
         bool modeDone = false;
+        bool allsame = true;
 
         // if(idx%1000000 == 0 && idx < 10000000 )  casePr = true;
         // else casePr = false;
@@ -2256,6 +2276,16 @@ inline int mm_partition_reuseBased(Tensor *arrX, Tensor &X, TiledTensor *MTX, Op
         }
 
         /* if fiber is longer */
+        for (int m = 0; m < X.ndims-1; ++m){
+            if(fbrNnz[m] != fbrNnz[m+1] )
+                allsame = false;
+        }
+
+        // if (allsame) {
+        //     allnnz1++;
+        //     mode = shortestMode;
+        //     modeDone = true;
+        // }
 
         if ( fbrNnz[0] >=  fbTh * maxOf3(fbrNnz[1] , fbrNnz[2], fbrNnz[3]) && !modeDone) {
             modeDone = true;
@@ -2306,6 +2336,7 @@ inline int mm_partition_reuseBased(Tensor *arrX, Tensor &X, TiledTensor *MTX, Op
             cout << "selected mode: " << mode << endl;
     }
     }
+    cout << "nnz1 in all mode " << allnnz1 << endl;
 
     // for (int m = 0; m < X.ndims; ++m)
     //     MTX[m].totNnz = MTX[m].vals.size();
@@ -3149,6 +3180,9 @@ inline Options parse_cmd_options(int argc, char **argv) {
             param.TBsize = atoi(argv[i]);
             break;
 
+        case 's':
+            param.fiberPerWarp = atoi(argv[i]);
+            break;
 
         case 'h':
             param.MIfbTh = atoi(argv[i]);
@@ -3191,8 +3225,6 @@ inline Options parse_cmd_options(int argc, char **argv) {
         case 'r':
             param.m2 = argv[i];
             break;
-
-
 
         default:
             fprintf(stderr, "unknown option: -%c\n", argv[i - 1][1]);
