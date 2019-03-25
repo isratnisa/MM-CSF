@@ -2083,9 +2083,9 @@ inline int mm_partition_reuseBased(Tensor *arrX, Tensor &X, TiledTensor *MTX, Op
 
     for (int m = 0; m < arrX[0].ndims; ++m){
 
-        // #pragma omp parallel 
+        #pragma omp parallel 
         {
-        // #pragma omp for 
+        #pragma omp for 
         for(ITYPE slc = 0; slc < arrX[m].fbrIdx[0].size(); ++slc) {
 
             arrX[m].denseSlcPtr[arrX[m].fbrIdx[0][slc]] = arrX[m].fbrPtr[0][slc];
@@ -2197,7 +2197,7 @@ inline int mm_partition_reuseBased(Tensor *arrX, Tensor &X, TiledTensor *MTX, Op
     #pragma omp barrier
 
     /******** Process NNZ********s*/
-    // #pragma omp parallel 
+    #pragma omp parallel 
     {
     ITYPE *fbrNnz = new ITYPE[4];
     memset(fbrNnz, 0, 4 * sizeof(ITYPE));   //hard code to check fbrnnz[3]  
@@ -2207,9 +2207,7 @@ inline int mm_partition_reuseBased(Tensor *arrX, Tensor &X, TiledTensor *MTX, Op
     ITYPE tmpSlc;
     int mode;
 
-    // #pragma omp for 
-
- 
+    #pragma omp for 
     for (int idx = 0; idx < X.totNnz; ++idx){
         
         bool modeDone = false;
