@@ -1701,11 +1701,16 @@ int MTTKRP_B_HCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 		int smallBinEndsAt = 5;
 		int slcPerTb = 0;
 
-		int warpPerFbr = BLOCKSIZE/32;//1;//Opt.warpPerSlice;//4;//;
+		// int warpPerFbr = BLOCKSIZE/32;//1;//Opt.warpPerSlice;//4;//;
+		// int logOfWarpPerFbr = log2(warpPerFbr);
+		// int bin = 0;
+		// int fbrPerWarp = 1;//BLOCKSIZE/32; // dont overflow TB
+		// int logOfFbrPerWarp = log2(fbrPerWarp);
+
+		int warpPerFbr =Opt.warpPerSlice;//4;//; BLOCKSIZE/32;//1;//
 		int logOfWarpPerFbr = log2(warpPerFbr);
-		int bin = 0;
-		int fbrPerWarp = 1;//BLOCKSIZE/32; // dont overflow TB
-		int logOfFbrPerWarp = log2(fbrPerWarp);	
+		int fbrPerWarp = Opt.fiberPerWarp;//1;//BLOCKSIZE/32; // dont overflow TB
+		int logOfFbrPerWarp = log2(fbrPerWarp );	
 		
 		grid.x = ( warpPerFbr * 32 * ((TiledX[tile].nFibers+fbrPerWarp-1)/fbrPerWarp) + BLOCKSIZE - 1) / BLOCKSIZE;
 
@@ -1715,11 +1720,11 @@ int MTTKRP_B_HCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 		if(slcAtomicFbrLvlPar){
 
 			if(TiledX[0].ndims == 3)
-				mttkrp_MIHCSR_kernel_slc_atomic_fbrLvlPar<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dFbrLikeSlcInds + dFbrLoc, 
+				mttkrp_MIHCSR_kernel_slc_atomic_fbrLvlPar<<<grid, block, 0, 0>>>(dVals + dLoc, dFbrLikeSlcInds + dFbrLoc, 
 				dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[tile].nFibers, 
 				dU0, dU1, dU2, Opt.mode, Opt.R, warpPerFbr, logOfWarpPerFbr, fbrPerWarp, logOfFbrPerWarp);
 			else
-				mttkrp_MIHCSR_kernel_slc_atomic_fbrLvlPar_4D<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dFbrLikeSlcInds + dFbrLoc, 
+				mttkrp_MIHCSR_kernel_slc_atomic_fbrLvlPar_4D<<<grid, block, 0, 0>>>(dVals + dLoc, dFbrLikeSlcInds + dFbrLoc, 
 				dInds3 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, dFbrPtr2 + dFbrLoc2, dFbrIdx2 + dFbrLoc2, TiledX[tile].nFibers, 
 				dU0, dU1, dU2, dU3, Opt.mode, Opt.R, warpPerFbr, logOfWarpPerFbr, fbrPerWarp, logOfFbrPerWarp);
 		}
@@ -2234,10 +2239,10 @@ int MTTKRP_ONE_HCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 	int BLOCKSIZE = 512;
 	unsigned int rowInATB = BLOCKSIZE / (Opt.warpPerSlice*32); 
 
-	if(Opt.warpPerSlice * 32 > BLOCKSIZE){
-		cout << "BLOCKSIZE is smaller than work per slice! Increase BLOCKSIZE." << endl;
-		exit(0);
-	}
+	// if(Opt.warpPerSlice * 32 > BLOCKSIZE){
+	// 	cout << "BLOCKSIZE is smaller than work per slice! Increase BLOCKSIZE." << endl;
+	// 	exit(0);
+	// }
 
     cudaEvent_t start, stop;
     cudaEventCreate(&start);
@@ -2350,12 +2355,20 @@ int MTTKRP_ONE_HCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 				dim3 block(BLOCKSIZE, 1, 1), grid(1, 1, 1);
 				int smallBinEndsAt = 5;
 				int slcPerTb = 0;
-				int warpPerFbr = BLOCKSIZE/32;//1;//Opt.warpPerSlice;//4;//;
+				int warpPerFbr =Opt.warpPerSlice;//4;//; BLOCKSIZE/32;//1;//
 				int logOfWarpPerFbr = log2(warpPerFbr);
 				int bin = 0;
 				bool useLoop = false;
-				int fbrPerWarp = 1;//BLOCKSIZE/32; // dont overflow TB
-				int logOfFbrPerWarp = log2(fbrPerWarp );		
+				int fbrPerWarp = Opt.fiberPerWarp;//1;//BLOCKSIZE/32; // dont overflow TB
+				int logOfFbrPerWarp = log2(fbrPerWarp );
+				// int fbrPerWarp = 1;//BLOCKSIZE/32; // dont overflow TB
+				// int logOfFbrPerWarp = log2(fbrPerWarp );
+
+				if( (warpPerFbr > (BLOCKSIZE/32)) || (fbrPerWarp > (BLOCKSIZE/32)) ){
+					cout << "warpPerFbr (-w) or fbrPerWarp (-s) cannot be higher than threadblock size!"
+					<< endl << "hint: increase -b!" << endl;
+					exit(0);
+				}		
 
 				/* Like PARTI loop */ 
 				if(useLoop)
@@ -2367,12 +2380,12 @@ int MTTKRP_ONE_HCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 				cuda_timer_start(start);
 				
 				if(TiledX[0].ndims == 3)
-					mttkrp_MIHCSR_kernel_slc_atomic_fbrLvlPar<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dFbrLikeSlcInds + dFbrLoc, 
+					mttkrp_MIHCSR_kernel_slc_atomic_fbrLvlPar<<<grid, block, 0, 0>>>(dVals + dLoc, dFbrLikeSlcInds + dFbrLoc, 
 					dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[tile].nFibers, 
 					dU + dULoc[0], dU + dULoc[1], dU + dULoc[2], Opt.mode, Opt.R, warpPerFbr, logOfWarpPerFbr, fbrPerWarp, logOfFbrPerWarp);
 		
 				else if(TiledX[0].ndims == 4)
-					mttkrp_MIHCSR_kernel_slc_atomic_fbrLvlPar_4D<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dFbrLikeSlcInds + dFbrLoc, 
+					mttkrp_MIHCSR_kernel_slc_atomic_fbrLvlPar_4D<<<grid, block, 0, 0>>>(dVals + dLoc, dFbrLikeSlcInds + dFbrLoc, 
 					dInds3 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, dFbrPtr2 + dFbrLoc2, dFbrIdx2 + dFbrLoc2, 
 					TiledX[tile].nFibers, dU + dULoc[0], dU + dULoc[1], dU + dULoc[2], dU + dULoc[3], Opt.mode, Opt.R, warpPerFbr, logOfWarpPerFbr, fbrPerWarp, logOfFbrPerWarp);
 				
@@ -2419,7 +2432,11 @@ int MTTKRP_ONE_HCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 
 				int smallBinEndsAt = 5;
 				int slcPerTb = 0;
-				int warpPerFbr = BLOCKSIZE/32;//1;//Opt.warpPerSlice;//4;//;
+				int warpPerFbr = Opt.warpPerSlice;//4;//;BLOCKSIZE/32;//
+				if(warpPerFbr > (BLOCKSIZE/32)){
+					cout << "warpPerFbr (-w) cannot be higher than threadblock size! hint: increase -b!" << endl;
+					exit(0);
+				}
 				int logOfWarpPerFbr = log2(warpPerFbr);
 				int bin = 0;
 
@@ -2474,7 +2491,11 @@ int MTTKRP_ONE_HCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 
 				int smallBinEndsAt = 5;
 				int slcPerTb = 0;
-				int warpPerFbr = BLOCKSIZE/32;//1;//Opt.warpPerSlice;//4;//;
+				int warpPerFbr = Opt.warpPerSlice;//4;//;BLOCKSIZE/32;//
+				if(warpPerFbr > (BLOCKSIZE/32)){
+					cout << "warpPerFbr (-w) cannot be higher than threadblock size! hint: increase -b!" << endl;
+					exit(0);
+				}
 				int logOfWarpPerFbr = log2(warpPerFbr);
 				int bin = 0;
 				bool useLoop = false;
@@ -2548,11 +2569,13 @@ int MTTKRP_ONE_HCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 				bool useLoop = false;
 				int smallBinEndsAt = 5;
 				int slcPerTb = 0;
-				int warpPerFbr = BLOCKSIZE/32;//
+				int warpPerFbr = Opt.warpPerSlice;//4;//;BLOCKSIZE/32;//
+				if(warpPerFbr > (BLOCKSIZE/32)){
+					cout << "warpPerFbr (-w) cannot be higher than threadblock size! hint: increase -b!" << endl;
+					exit(0);
+				}
 				int logOfWarpPerFbr = log2(warpPerFbr);
 				int bin = 0;
-
-				cout << TiledX[tile].nFibers << " fibers" << endl;
 				
 				// /* Like PARTI loop */ = 
 				if(useLoop)
@@ -2749,10 +2772,10 @@ int MTTKRP_MIHCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 	int BLOCKSIZE = 512;
 	unsigned int rowInATB = BLOCKSIZE / (Opt.warpPerSlice*32); 
 
-	if(Opt.warpPerSlice * 32 > BLOCKSIZE){
-		cout << "BLOCKSIZE is smaller than work per slice! Increase BLOCKSIZE." << endl;
-		exit(0);
-	}
+	// if(Opt.warpPerSlice * 32 > BLOCKSIZE){
+	// 	cout << "BLOCKSIZE is smaller than work per slice! Increase BLOCKSIZE." << endl;
+	// 	exit(0);
+	// }
 
     cudaEvent_t start, stop;
     cudaEventCreate(&start);
@@ -2864,97 +2887,111 @@ int MTTKRP_MIHCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 
 			if(TiledX[m].modeOrder[0] == MTTKRPmode && TiledX[m].totNnz){
 
-				if(Opt.verbose)
+				// if(Opt.verbose)
 					cout << "Slc atomics - " ;
 
 				// BLOCKSIZE = 128;
 				BLOCKSIZE = Opt.TBsize;
 				dim3 block(BLOCKSIZE, 1, 1), grid(1, 1, 1);
 				
-				int warpPerFbr = 1;//BLOCKSIZE/32;//1;//Opt.warpPerSlice;//4;//;
+				int warpPerFbr = Opt.warpPerSlice;//4;//;
 				int logOfWarpPerFbr = log2(warpPerFbr);
-				int bin = 0;
-				int fbrPerWarp = BLOCKSIZE/32; // dont overflow TB
+				int fbrPerWarp = Opt.fiberPerWarp;//1;//BLOCKSIZE/32; // dont overflow TB
 				int logOfFbrPerWarp = log2(fbrPerWarp );
+
+				if( (warpPerFbr > (BLOCKSIZE/32)) || (fbrPerWarp > (BLOCKSIZE/32)) ){
+					cout << "warpPerFbr (-w) or fbrPerWarp (-s) cannot be higher than threadblock size!"
+					<< endl << "hint: increase -b!" << endl;
+					exit(0);
+				}
 
 				grid.x = ( warpPerFbr * 32 * ((TiledX[m].nFibers + fbrPerWarp-1)/fbrPerWarp) + BLOCKSIZE - 1) / BLOCKSIZE;
 	
 				if(TiledX[0].ndims == 3)
-					mttkrp_MIHCSR_kernel_slc_atomic_fbrLvlPar<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dFbrLikeSlcInds + dFbrIdxLoc, 
+					mttkrp_MIHCSR_kernel_slc_atomic_fbrLvlPar<<<grid, block, 0, 0>>>(dVals + dLoc, dFbrLikeSlcInds + dFbrIdxLoc, 
 					dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrIdxLoc, TiledX[m].nFibers, 
 					dU + dULoc[0], dU + dULoc[1], dU + dULoc[2], Opt.mode, Opt.R, warpPerFbr, logOfWarpPerFbr, fbrPerWarp, logOfFbrPerWarp);
 		
 				else if(TiledX[0].ndims == 4)
-					mttkrp_MIHCSR_kernel_slc_atomic_fbrLvlPar_4D<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dFbrLikeSlcInds + dFbrIdxLoc, 
+					mttkrp_MIHCSR_kernel_slc_atomic_fbrLvlPar_4D<<<grid, block, 0, 0>>>(dVals + dLoc, dFbrLikeSlcInds + dFbrIdxLoc, 
 					dInds3 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrIdxLoc, dFbrPtr2 + dFbrLoc2, dFbrIdx2 + dFbrLoc2, 
 					TiledX[m].nFibers, dU + dULoc[0], dU + dULoc[1], dU + dULoc[2], dU + dULoc[3], Opt.mode, Opt.R, warpPerFbr, logOfWarpPerFbr, fbrPerWarp, logOfFbrPerWarp);
 			}
 
 			else if(TiledX[0].ndims == 4 && TiledX[m].modeOrder[1] == MTTKRPmode && TiledX[m].totNnz){
 
-				if(Opt.verbose)
+				// if(Opt.verbose)
 					cout << "FbrS atomics - ";
 
-				BLOCKSIZE = 128;//Opt.TBsize;
+				BLOCKSIZE = Opt.TBsize;
 				dim3 block(BLOCKSIZE, 1, 1), grid(1, 1, 1);
 
-				int warpPerFbr = 1;//BLOCKSIZE/32;//1;//Opt.warpPerSlice;//4;//;
+				int warpPerFbr = Opt.warpPerSlice;//1;//BLOCKSIZE/32;//1;////4;//;	
+				if(warpPerFbr > (BLOCKSIZE/32)){
+					cout << "warpPerFbr (-w) cannot be higher than threadblock size! hint: increase -b!" << endl;
+					exit(0);
+				}
 				int logOfWarpPerFbr = log2(warpPerFbr);
-				int bin = 0;
 
 				grid.x = ( warpPerFbr * 32 * TiledX[m].nFibers + BLOCKSIZE - 1) / BLOCKSIZE;
 				
-				mttkrp_MIHCSR_kernel_fbrS_atomic_fbrLvlPar_4D<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dFbrLikeSlcInds + dFbrIdxLoc, 
+				mttkrp_MIHCSR_kernel_fbrS_atomic_fbrLvlPar_4D<<<grid, block, 0, 0>>>(dVals + dLoc, dFbrLikeSlcInds + dFbrIdxLoc, 
 				dInds3 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrIdxLoc, dFbrPtr2 + dFbrLoc2, dFbrIdx2 + dFbrLoc2, 
 				TiledX[m].nFibers, dU + dULoc[1], dU + dULoc[2], dU + dULoc[3], dU + dULoc[0], Opt.mode, Opt.R, warpPerFbr, logOfWarpPerFbr);
 			}
 
 			else if(TiledX[m].modeOrder[TiledX[0].ndims-2] == MTTKRPmode && TiledX[m].totNnz){
 			
-				if(Opt.verbose)
+				// if(Opt.verbose)
 					cout << "Fbr atomics - ";
 
-				BLOCKSIZE = 128;
+				BLOCKSIZE = Opt.TBsize;
 				dim3 block(BLOCKSIZE, 1, 1), grid(1, 1, 1);
 
-				int warpPerFbr = 1;//Opt.warpPerSlice;//4;//;BLOCKSIZE/32;//
+				int warpPerFbr = Opt.warpPerSlice;//4;//;BLOCKSIZE/32;//
+				if(warpPerFbr > (BLOCKSIZE/32)){
+					cout << "warpPerFbr (-w) cannot be higher than threadblock size! hint: increase -b!" << endl;
+					exit(0);
+				}
 				int logOfWarpPerFbr = log2(warpPerFbr);
-				int bin = 0;
 				
 				grid.x = ( warpPerFbr * 32 * TiledX[m].nFibers + BLOCKSIZE - 1) / BLOCKSIZE;
 
 				if(TiledX[0].ndims == 3)
-					mttkrp_MIHCSR_kernel_fbr_atomic_fbrLvlPar<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dFbrLikeSlcInds + dFbrIdxLoc, 
+					mttkrp_MIHCSR_kernel_fbr_atomic_fbrLvlPar<<<grid, block, 0, 0>>>(dVals + dLoc, dFbrLikeSlcInds + dFbrIdxLoc, 
 					dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrIdxLoc, TiledX[m].nFibers, 
 					dU + dULoc[1], dU + dULoc[2], dU + dULoc[0], Opt.mode, Opt.R, warpPerFbr, logOfWarpPerFbr);
 				
 				else if (TiledX[0].ndims == 4)
-					mttkrp_MIHCSR_kernel_fbr_atomic_fbrLvlPar_4D<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dFbrLikeSlcInds + dFbrIdxLoc, 
+					mttkrp_MIHCSR_kernel_fbr_atomic_fbrLvlPar_4D<<<grid, block, 0, 0>>>(dVals + dLoc, dFbrLikeSlcInds + dFbrIdxLoc, 
 					dInds3 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrIdxLoc, dFbrPtr2 + dFbrLoc2, dFbrIdx2 + dFbrLoc2, 
 					TiledX[m].nFibers,  dU + dULoc[2], dU + dULoc[3], dU + dULoc[0], dU + dULoc[1], Opt.mode, Opt.R, warpPerFbr, logOfWarpPerFbr);
 			}
 
 			else if(TiledX[m].modeOrder[TiledX[0].ndims-1] == MTTKRPmode && TiledX[m].totNnz){
 
-				if(Opt.verbose)
+				// if(Opt.verbose)
 					cout << "nnz atomics - " ;
 
-				BLOCKSIZE = 128;
+				BLOCKSIZE = Opt.TBsize;
 				dim3 block(BLOCKSIZE, 1, 1), grid(1, 1, 1);
 
-				int warpPerFbr = 1;//Opt.warpPerSlice;//4;//;BLOCKSIZE/32;//
+				int warpPerFbr = Opt.warpPerSlice;//4;//;BLOCKSIZE/32;//
+				if(warpPerFbr > (BLOCKSIZE/32)){
+					cout << "warpPerFbr (-w) cannot be higher than threadblock size! hint: increase -b!" << endl;
+					exit(0);
+				}
 				int logOfWarpPerFbr = log2(warpPerFbr);
-				int bin = 0;
 				
 				grid.x = ( warpPerFbr * 32 * TiledX[m].nFibers + BLOCKSIZE - 1) / BLOCKSIZE;
 
 				if (TiledX[0].ndims == 3)
-					mttkrp_MIHCSR_kernel_all_atomic_fbrLvlPar<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dFbrLikeSlcInds + dFbrIdxLoc, 
+					mttkrp_MIHCSR_kernel_all_atomic_fbrLvlPar<<<grid, block, 0, 0>>>(dVals + dLoc, dFbrLikeSlcInds + dFbrIdxLoc, 
 					dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrIdxLoc, TiledX[m].nFibers, 
 					dU + dULoc[2], dU + dULoc[0], dU + dULoc[1], Opt.mode, Opt.R, warpPerFbr, logOfWarpPerFbr); 
 
 				else if (TiledX[0].ndims == 4)
-					mttkrp_MIHCSR_kernel_all_atomic_fbrLvlPar_4D<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dFbrLikeSlcInds + dFbrIdxLoc, 
+					mttkrp_MIHCSR_kernel_all_atomic_fbrLvlPar_4D<<<grid, block, 0, 0>>>(dVals + dLoc, dFbrLikeSlcInds + dFbrIdxLoc, 
 					dInds3 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrIdxLoc, dFbrPtr2 + dFbrLoc2, dFbrIdx2 + dFbrLoc2, 
 					TiledX[m].nFibers,  dU + dULoc[3], dU + dULoc[0], dU + dULoc[1], dU + dULoc[2], Opt.mode, Opt.R, warpPerFbr, logOfWarpPerFbr);
 			}
