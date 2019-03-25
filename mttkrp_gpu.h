@@ -17,4 +17,6 @@ int MTTKRP_HYB_GPU(const HYBTensor &HybX, Matrix *U, const Options &Opt);
 
 int MTTKRP_MIHCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt);
 
+int MTTKRP_MIHCSR_multiGPU(TiledTensor *TiledX, Matrix *U, const Options &Opt, const MPI_param &MPIparam);
+
 #endif

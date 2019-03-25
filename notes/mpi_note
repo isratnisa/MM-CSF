@@ -1,0 +1,4 @@
+on owens:
+#allocate 2(or more) nodes
+$ qsub -I -l walltime=2:59:00 -l nodes=2:ppn=28:gpus=1
+$ mpiexec -n 2 -ppn 1 ./mttkrp -i ../dataset/3d_3_8_sorted012.tns -m 0 -R 32 -t 12 -f 128 -b 128 -c 1 -s 1 -w 4 -v 1

@@ -17,20 +17,12 @@ int main(int argc, char* argv[]){
  
     cudaDeviceSetCacheConfig(cudaFuncCachePreferL1);
     Options Opt = parse_cmd_options(argc, argv);
-
+    
     Tensor X;
     load_tensor(X, Opt);
     check_opt(X, Opt); //check options are good
     sort_COOtensor(X);
-    
-    if(Opt.useMPI){
-        cout <<"For ri2: Load module (e.g. $module load mvapich2-2.1/gcc)" << endl;
-        cout <<"For ri2: Put correct mpibin (e.g. $mpiexec -n 4 ./mttkrp ..)" << endl;
-        MPI_param MPIparam;
-        create_HCSR(X, Opt);
-        start_mpi(MPIparam);
-        create_mpi_partition(X, MPIparam);
-    }
+    MPI_param MPIparam;
     
     TiledTensor TiledX[Opt.nTile];
       
@@ -343,7 +335,15 @@ int main(int argc, char* argv[]){
         /* on GPU */
         else if(Opt.impType == 12){ 
 
-            MTTKRP_MIHCSR_GPU(ModeWiseTiledX, U, Opt);
+            if(Opt.useMPI){
+               
+                start_mpi(MPIparam);
+                MTTKRP_MIHCSR_multiGPU(ModeWiseTiledX, U, Opt, MPIparam);
+                end_mpi();
+                // create_mpi_partition(X, MPIparam);
+            }
+            else
+                MTTKRP_MIHCSR_GPU(ModeWiseTiledX, U, Opt);
 
         }
         // printf("MIHCSR incl CPU - time: %.3f sec \n", seconds() - t0);
@@ -360,6 +360,10 @@ int main(int argc, char* argv[]){
         if (Opt.impType == 1) {
             cout << "Already running COO seq on CPU!" << endl; 
             exit(0);
+        }
+        if(Opt.useMPI){
+            if(MPIparam.mpi_rank > 0)
+                return 0;
         }
         if(Opt.verbose && (Opt.impType == 12 || Opt.impType == 14))
             cout << "checking only the last mode. " << endl;

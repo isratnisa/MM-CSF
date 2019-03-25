@@ -175,6 +175,12 @@ public:
     }
 };
 
+class MPI_param{
+    public:
+        int mpi_rank, n_proc;
+
+};
+
 inline int check_opt(const Tensor &X, Options &Opt){
     
     if(X.ndims > 4){
@@ -2151,7 +2157,6 @@ inline int mm_partition_reuseBased(Tensor *arrX, Tensor &X, TiledTensor *MTX, Op
 
     //not mode sorted
     int shortestMode = ( (X.dims[X.modeOrder[0]] <= X.dims[X.modeOrder[1]]) ? X.modeOrder[0] : X.modeOrder[1]) ;
-    cout << shortestMode << " abal " <<  X.modeOrder[0] << " " <<  X.modeOrder[1] << endl;
 
     bool sameFm0m1 = false, sameFm0m2 = false, sameFm1m2 = false, sameFm0m3 = false, 
         sameFm1m3 = false, sameFm2m3 = false;
@@ -2314,9 +2319,9 @@ inline int mm_partition_reuseBased(Tensor *arrX, Tensor &X, TiledTensor *MTX, Op
         if(!modeDone)
             mode = -1;
 
-        // if(idx < 6)
-        //     mode = 1;
-        // else mode = 2;
+        // if(idx < X.totNnz/2)
+        //     mode = 0;
+        // else mode = 1;
 
         // if( mode == 2)
         //     for (int i = 0; i < 4; ++i)
