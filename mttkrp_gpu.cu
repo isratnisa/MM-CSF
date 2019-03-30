@@ -3444,7 +3444,7 @@ int MTTKRP_MIHCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 
 /*scales with the number of partition. An MM-CSF with 2 partition will launch kernel in 2 nodes in paralle.
 Not scalable to mode nodes*/
-int MTTKRP_MIHCSR_multiGPU_mmPar(TiledTensor *TiledX, Matrix *U, const Options &Opt, const MPI_param &MPIparam){
+int MTTKRP_MIHCSR_multiGPU(TiledTensor *TiledX, Matrix *U, const Options &Opt, const MPI_param &MPIparam){
 
     ITYPE *dInds2, *dInds3, *dfbrPtr0, *dfbrIdx0, *dfbrPtr1, *dfbrIdx1, *dFbrPtr2, *dFbrIdx2, *dSlcMapperBin, *dFbrLikeSlcInds;
     DTYPE *dVals;
