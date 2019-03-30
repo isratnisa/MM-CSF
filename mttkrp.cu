@@ -20,8 +20,8 @@ int main(int argc, char* argv[]){
     
     Tensor X;
     load_tensor(X, Opt);
-    check_opt(X, Opt); //check options are good
     sort_COOtensor(X);
+    check_opt(X, Opt); //check options are good
     MPI_param MPIparam;
     
     TiledTensor TiledX[Opt.nTile];
@@ -336,7 +336,7 @@ int main(int argc, char* argv[]){
         else if(Opt.impType == 12){ 
 
             if(Opt.useMPI){
-               
+                cout << "MTTKRP on " << MPIparam.n_proc <<" GPUs. " << endl;
                 start_mpi(MPIparam);
                 MTTKRP_MIHCSR_multiGPU(ModeWiseTiledX, U, Opt, MPIparam);
                 end_mpi();

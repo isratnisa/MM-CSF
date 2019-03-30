@@ -1169,6 +1169,7 @@ inline int create_TiledHCSR(TiledTensor *TiledX, const Options &Opt, int tile){
     }
     
     int idx = 1 ;
+    ITYPE fiberSNnz = 1;
     
     while(idx < TiledX[tile].totNnz) {
 
@@ -1186,6 +1187,7 @@ inline int create_TiledHCSR(TiledTensor *TiledX, const Options &Opt, int tile){
         while( sameFbr && idx < TiledX[tile].totNnz && fiberNnz < fbrThreashold){
             ++idx;
             fiberNnz++;
+            fiberSNnz++;
             for (int i = 0; i < TiledX[tile].ndims-1; ++i) {
                 fbrId[i] = TiledX[tile].inds[TiledX[tile].modeOrder[i]][idx];   
                 if(fbrId[i] != prevId[i])
@@ -1210,9 +1212,17 @@ inline int create_TiledHCSR(TiledTensor *TiledX, const Options &Opt, int tile){
                 if( fbrId[iDim] != prevId[iDim]) {//not else ..not become this in loop          
                     diffFbr = true;
                 } 
+                /*splitting fbrS for 4D */
+                else if( TiledX[tile].ndims == 4 && iDim == 1 && fiberSNnz > fbrThreashold){ 
+                    diffFbr = true;                    
+                }
                 iDim--;
             }
             if(diffFbr){
+
+                if(TiledX[tile].ndims == 4 && i == 1)
+                    fiberSNnz = 1;
+
                 TiledX[tile].fbrIdx[i].push_back(fbrId[i]);
                 TiledX[tile].fbrPtr[i].push_back((ITYPE)(TiledX[tile].fbrPtr[i+1].size()) - 1);
             }
@@ -1222,7 +1232,9 @@ inline int create_TiledHCSR(TiledTensor *TiledX, const Options &Opt, int tile){
             prevId[i] =  fbrId[i];
 
         ++idx;
+        fiberSNnz++;
         fiberNnz = 1;
+        
     }
     TiledX[tile].fbrPtr[TiledX[tile].ndims-2].push_back(idx);
     TiledX[tile].fbrIdx[TiledX[tile].ndims-2].push_back(fbrId[TiledX[tile].ndims-2]);
@@ -2148,13 +2160,6 @@ inline int mm_partition_reuseBased(Tensor *arrX, Tensor &X, TiledTensor *MTX, Op
     ITYPE mode2 = 2;//X.modeOrder[2];
     ITYPE mode3 = 3;
 
-    // int *fbrNnz = new int[X.ndims];
-    // int *fbrNo = new int[X.ndims];
-    // int *fbrSt = new int[X.ndims];
-    // int *curIdx = new int[X.ndims];
-    // int *sliceNnz = new int[X.ndims];
-    // int tmpSlc;
-
     //not mode sorted
     int shortestMode = ( (X.dims[X.modeOrder[0]] <= X.dims[X.modeOrder[1]]) ? X.modeOrder[0] : X.modeOrder[1]) ;
 
@@ -2201,18 +2206,25 @@ inline int mm_partition_reuseBased(Tensor *arrX, Tensor &X, TiledTensor *MTX, Op
     int allnnz1 = 0;
     #pragma omp barrier
 
+    ITYPE **slcNnzPerParti = new ITYPE*[X.ndims];
+    
+    for (int m = 0; m < X.ndims; ++m){
+    
+        slcNnzPerParti[m] = new ITYPE[X.dims[m]];
+        memset(&(slcNnzPerParti[m][0]), 0, X.dims[m] * sizeof(ITYPE));
+    }  
+
     /******** Process NNZ********s*/
-    #pragma omp parallel 
+    // #pragma omp parallel 
     {
-    ITYPE *fbrNnz = new ITYPE[4];
-    memset(fbrNnz, 0, 4 * sizeof(ITYPE));   //hard code to check fbrnnz[3]  
+    ITYPE *fbrNnz = new ITYPE[X.ndims];
     ITYPE *fbrNo = new ITYPE[X.ndims];
     ITYPE *curIdx = new ITYPE[X.ndims];
     ITYPE *sliceNnz =  new ITYPE[X.ndims];
     ITYPE tmpSlc;
     int mode;
 
-    #pragma omp for 
+    // #pragma omp for 
     for (int idx = 0; idx < X.totNnz; ++idx){
         
         bool modeDone = false;
@@ -2290,31 +2302,93 @@ inline int mm_partition_reuseBased(Tensor *arrX, Tensor &X, TiledTensor *MTX, Op
         //     modeDone = true;
         // }
 
-        if ( fbrNnz[0] >=  fbTh * maxOf3(fbrNnz[1] , fbrNnz[2], fbrNnz[3]) && !modeDone) {
-            modeDone = true;
-            if(sameFm0m1 || sameFm0m2 || sameFm0m3)
-                mode = shortMode;
-            else
+        if(X.ndims == 3){
+
+            if ( fbrNnz[0] >=  fbTh * std::max(fbrNnz[1] , fbrNnz[2]) && !modeDone) {
+                modeDone = true;
+                if(sameFm0m1 || sameFm0m2 || sameFm0m3)
+                    mode = shortMode;
+                else
+                    mode = 0;
+            }
+            else if ( fbrNnz[1] >=  fbTh * std::max(fbrNnz[0] , fbrNnz[2]) && !modeDone) {
+                modeDone = true;
+                if(sameFm1m2 || sameFm1m3)
+                    mode = shortMode;
+                else 
+                    mode = 1;
+            }
+            else if ( fbrNnz[2] >=  fbTh * std::max(fbrNnz[0] , fbrNnz[1]) && !modeDone) {
+                modeDone = true;
+                if(sameFm2m3)
+                    mode = shortMode;
+                else 
+                    mode = 2;
+            }
+
+            else if( slcNnzPerParti[0][curIdx[0]] >= std::max(slcNnzPerParti[1][curIdx[1]] , slcNnzPerParti[2][curIdx[2]]) && !modeDone){
                 mode = 0;
-        }
-        else if ( fbrNnz[1] >=  fbTh * maxOf3(fbrNnz[0] , fbrNnz[2], fbrNnz[3]) && !modeDone) {
-            modeDone = true;
-            if(sameFm1m2 || sameFm1m3)
-                mode = shortMode;
-            else 
+            }
+
+            else if( slcNnzPerParti[1][curIdx[1]] >= std::max(slcNnzPerParti[0][curIdx[0]] , slcNnzPerParti[2][curIdx[2]]) && !modeDone){
                 mode = 1;
-        }
-        else if ( fbrNnz[2] >=  fbTh * maxOf3(fbrNnz[0] , fbrNnz[1], fbrNnz[3]) && !modeDone) {
-            modeDone = true;
-            if(sameFm2m3)
-                mode = shortMode;
-            else 
+            }
+
+            else if( slcNnzPerParti[2][curIdx[2]] >= std::max(slcNnzPerParti[1][curIdx[1]] , slcNnzPerParti[0][curIdx[0]]) && !modeDone){
                 mode = 2;
+            }
         }
-        else if ( fbrNnz[3] >=  fbTh * maxOf3(fbrNnz[0] , fbrNnz[1], fbrNnz[2]) && !modeDone) {
-            modeDone = true;
-            mode = 3;
+
+        else if(X.ndims == 4){
+
+            if ( fbrNnz[0] >=  fbTh * maxOf3(fbrNnz[1] , fbrNnz[2], fbrNnz[3]) && !modeDone) {
+                modeDone = true;
+                if(sameFm0m1 || sameFm0m2 || sameFm0m3)
+                    mode = shortMode;
+                else
+                    mode = 0;
+            }
+            else if ( fbrNnz[1] >=  fbTh * maxOf3(fbrNnz[0] , fbrNnz[2], fbrNnz[3]) && !modeDone) {
+                modeDone = true;
+                if(sameFm1m2 || sameFm1m3)
+                    mode = shortMode;
+                else 
+                    mode = 1;
+            }
+            else if ( fbrNnz[2] >=  fbTh * maxOf3(fbrNnz[0] , fbrNnz[1], fbrNnz[3]) && !modeDone) {
+                modeDone = true;
+                if(sameFm2m3)
+                    mode = shortMode;
+                else 
+                    mode = 2;
+            }
+            else if ( fbrNnz[3] >=  fbTh * maxOf3(fbrNnz[0] , fbrNnz[1], fbrNnz[2]) && !modeDone) {
+                modeDone = true;
+                mode = 3;
+            }
+
+            else if( slcNnzPerParti[0][curIdx[0]] >= maxOf3(slcNnzPerParti[1][curIdx[1]] , 
+                slcNnzPerParti[2][curIdx[2]], slcNnzPerParti[3][curIdx[3]]) && !modeDone){
+                mode = 0;
+            }
+
+            else if( slcNnzPerParti[1][curIdx[1]] >= maxOf3(slcNnzPerParti[0][curIdx[0]] , 
+                slcNnzPerParti[2][curIdx[2]], slcNnzPerParti[3][curIdx[3]]) && !modeDone){
+                mode = 1;
+            }
+
+            else if( slcNnzPerParti[2][curIdx[2]] >= maxOf3(slcNnzPerParti[1][curIdx[1]] , 
+                slcNnzPerParti[0][curIdx[0]], slcNnzPerParti[3][curIdx[3]]) && !modeDone){
+                mode = 2;
+            }
+
+            else if( slcNnzPerParti[3][curIdx[3]] >= maxOf3(slcNnzPerParti[1][curIdx[1]] , 
+                slcNnzPerParti[0][curIdx[0]], slcNnzPerParti[2][curIdx[2]]) && !modeDone){
+                mode = 3;
+            }
         }
+
+        slcNnzPerParti[mode][curIdx[mode]]++;
 
         if(!modeDone)
             mode = -1;
