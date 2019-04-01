@@ -73,6 +73,12 @@ class TiledTensor{
         ITYPE *denseSlcPtr;
         ITYPE *partPerNnz;
         ITYPE *totnnzPerPart;
+        ITYPE *mpiEndSlc; 
+        ITYPE *mpiEndFbr; 
+        ITYPE *mpiEndNnz; 
+        ITYPE *nnzInRank;
+        ITYPE *fbrInRank;
+        ITYPE *slcInRank;
         unordered_map<pair<ITYPE, ITYPE>, int, boost::hash<pair<ITYPE, ITYPE>>> fbrHashTbl; 
         // map<pair<ITYPE, ITYPE>, ITYPE> fbrHashTbl;
 };
@@ -148,7 +154,7 @@ public:
     std::string m0 = "012";
     std::string m1 = "120";
     std::string m2 = "201";
-    bool useMPI = false;
+    bool useMPI = true;
     bool natOrdering = false;
     ITYPE fbrThreashold = 99999999;
 

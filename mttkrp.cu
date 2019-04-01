@@ -336,11 +336,15 @@ int main(int argc, char* argv[]){
         else if(Opt.impType == 12){ 
 
             if(Opt.useMPI){
-                cout << "MTTKRP on " << MPIparam.n_proc <<" GPUs. " << endl;
+               
                 start_mpi(MPIparam);
+                cout << "MTTKRP on " << MPIparam.n_proc <<" GPUs. " << endl;
+                for (int m = 0; m < X.ndims; ++m){
+                    if(ModeWiseTiledX[m].totNnz)
+                        create_mpi_partition(ModeWiseTiledX, m, MPIparam);
+                }
                 MTTKRP_MIHCSR_multiGPU(ModeWiseTiledX, U, Opt, MPIparam);
                 end_mpi();
-                // create_mpi_partition(X, MPIparam);
             }
             else
                 MTTKRP_MIHCSR_GPU(ModeWiseTiledX, U, Opt);
