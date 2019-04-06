@@ -154,7 +154,7 @@ public:
     std::string m0 = "012";
     std::string m1 = "120";
     std::string m2 = "201";
-    bool useMPI = true;
+    bool useMPI = false;
     bool natOrdering = false;
     ITYPE fbrThreashold = 99999999;
 
@@ -2235,9 +2235,6 @@ inline int mm_partition_reuseBased(Tensor *arrX, Tensor &X, TiledTensor *MTX, Op
         
         bool modeDone = false;
         bool allsame = true;
-
-        // if(idx%1000000 == 0 && idx < 10000000 )  casePr = true;
-        // else casePr = false;
    
         for (int m = 0; m < X.ndims; ++m)
             curIdx[m] = X.inds[m][idx];
@@ -2302,12 +2299,6 @@ inline int mm_partition_reuseBased(Tensor *arrX, Tensor &X, TiledTensor *MTX, Op
                 allsame = false;
         }
 
-        // if (allsame) {
-        //     allnnz1++;
-        //     mode = shortestMode;
-        //     modeDone = true;
-        // }
-
         if(X.ndims == 3){
 
             if ( fbrNnz[0] >=  fbTh * std::max(fbrNnz[1] , fbrNnz[2]) && !modeDone) {
@@ -2334,14 +2325,25 @@ inline int mm_partition_reuseBased(Tensor *arrX, Tensor &X, TiledTensor *MTX, Op
 
             else if( slcNnzPerParti[0][curIdx[0]] >= std::max(slcNnzPerParti[1][curIdx[1]] , slcNnzPerParti[2][curIdx[2]]) && !modeDone){
                 mode = 0;
+                                // modeDone = true;
+                // if(sameFm0m1 || sameFm0m2)
+                //     mode = shortMode;
+                // else
+                //     mode = 0;
             }
 
             else if( slcNnzPerParti[1][curIdx[1]] >= std::max(slcNnzPerParti[0][curIdx[0]] , slcNnzPerParti[2][curIdx[2]]) && !modeDone){
                 mode = 1;
+                                // modeDone = true;
+                // if(sameFm1m2 )
+                //     mode = shortMode;
+                // else 
+                //     mode = 1;
             }
 
             else if( slcNnzPerParti[2][curIdx[2]] >= std::max(slcNnzPerParti[1][curIdx[1]] , slcNnzPerParti[0][curIdx[0]]) && !modeDone){
                 mode = 2;
+                       // modeDone = true;
             }
         }
 
@@ -2397,19 +2399,7 @@ inline int mm_partition_reuseBased(Tensor *arrX, Tensor &X, TiledTensor *MTX, Op
         slcNnzPerParti[mode][curIdx[mode]]++;
 
         if(!modeDone)
-            mode = -1;
-
-        // if(idx < X.totNnz/2)
-        //     mode = 0;
-        // else mode = 1;
-
-        // if( mode == 2)
-        //     for (int i = 0; i < 4; ++i)
-        //     {
-        //         cout << curIdx[i] << " ";
-        //     }
-        //     cout << endl;
-        // // mode = 3;
+             mode = shortestMode;//mode = -1;
     
         /*populate new partitions*/
         if(mode > -1){
@@ -2419,7 +2409,6 @@ inline int mm_partition_reuseBased(Tensor *arrX, Tensor &X, TiledTensor *MTX, Op
             cout << "selected mode: " << mode << endl;
     }
     }
-    cout << "nnz1 in all mode " << allnnz1 << endl;
 
     // for (int m = 0; m < X.ndims; ++m)
     //     MTX[m].totNnz = MTX[m].vals.size();

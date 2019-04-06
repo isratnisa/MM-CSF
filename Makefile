@@ -2,12 +2,15 @@ CXX=g++
 # CXX=icc
 NVCC=nvcc
 NVCC_LIB_PATH=/usr/lib/x86_64-linux-gnu
-
-BOOSTFLAG=-L/usr/local/boost/gnu/7.3/1.67.0/lib -I/home/nisa/Downloads/boost_1_69_0
+# pitzer
+BOOSTFLAG=-L/apps/boost/intel/18.0/1.67.0/lib -I/apps/boost/intel/18.0/1.67.0/include 
+# BOOSTFLAG=-L/usr/local/boost/gnu/7.3/1.67.0/lib -I/usr/local/boost/gnu/7.3/1.67.0/include
 CXXFLAGS=-O3 -std=c++11 -g -fopenmp $(BOOSTFLAG)
 
-MPIFLAGS = -I/act/mvapich2-2.1/gcc/include
-MPILINKFLAGS=-L/act/mvapich2-2.1/gcc/lib -lmpi
+MPIFLAGS = -I/opt/mvapich2/intel/18.0/2.3/include
+MPILINKFLAGS=-L/opt/mvapich2/intel/18.0/2.3/lib -lmpi
+
+
 
 NVCCFLAGS += -O3 -w -gencode arch=compute_70,code=sm_70 -rdc=true -Xptxas -dlcm=ca -Xcompiler -fopenmp --std=c++11 -m64 -lineinfo $(BOOSTFLAG) #–default-stream #per-thread #-g #-G
 NVCCLINKFLAGS = -L$(NVCC_LIB_PATH) -lcudart
