@@ -9,6 +9,7 @@
 #include "mttkrp_mpi.h"
 #include "mttkrp_cpu.h"
 #include "mttkrp_gpu.h" 
+#include "cpd_cpu.h"
 #include <bits/stdc++.h> 
  
 using namespace std;

@@ -155,6 +155,7 @@ public:
     std::string m1 = "120";
     std::string m2 = "201";
     bool useMPI = false;
+    bool doCPD = false;
     bool natOrdering = false;
     ITYPE fbrThreashold = 99999999;
 
@@ -3078,22 +3079,39 @@ inline int create_mats(const Tensor &X, Matrix *U, const Options &Opt, bool ata)
         U[mode].nRows =  X.dims[mode];
         U[mode].nCols =  R;
         if(ata)  
-            U[mode].nCols = U[mode].nRows;
+            U[mode].nRows = U[mode].nCols;
         U[mode].vals = (DTYPE*)malloc(U[mode].nRows * U[mode].nCols * sizeof(DTYPE));
     }
     return 0;
 }
 
+// jli added
+inline DTYPE RandomValue(void)
+{
+  DTYPE v =  3.0 * ((DTYPE) rand() / (DTYPE) RAND_MAX);
+  if(rand() % 2 == 0) {
+    v *= -1;
+  }
+  return v;
+}
+
+
 inline int randomize_mats(const Tensor &X, Matrix *U, const Options &Opt){
 
     ITYPE mode;
-  
+
     for (int m = 0; m < X.ndims; ++m){  
         mode = X.modeOrder[m];
-        srand48(0L);
+        // srand48(0L);
+        srand(time(NULL));
         for(long r = 0; r < U[mode].nRows; ++r){
-            for(long c = 0; c < U[mode].nCols; ++c) // or u[mode].nCols 
-                U[mode].vals[r * U[mode].nCols + c] = mode + .5;//1.5 * (mode+1);;// .1 * drand48(); //1 ;//; //
+            for(long c = 0; c < U[mode].nCols; ++c){ // or u[mode].nCols 
+                
+                if(Opt.doCPD)
+                    U[mode].vals[r * U[mode].nCols + c] = RandomValue(); //mode + .5;//1.5 * (mode+1);;// .1 * drand48(); //1 ;//; //
+                else
+                    U[mode].vals[r * U[mode].nCols + c] = mode + .5;//1.5
+            }
         }
     }
     return 0;
