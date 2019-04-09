@@ -156,6 +156,7 @@ public:
     std::string m2 = "201";
     bool useMPI = false;
     bool doCPD = false;
+    ITYPE cpdIters = 5;
     bool natOrdering = false;
     ITYPE fbrThreashold = 99999999;
 
@@ -1982,6 +1983,43 @@ inline int get_nnzPerFiberData(Tensor &X){
             X.nnzPerSlice[X.fbrIdx[0][slc]] += X.nnzPerFiber[fbr];
         }
     }
+
+    int nBin = 4;
+    ITYPE *fbrBin = (ITYPE *)malloc( nBin * sizeof(ITYPE));
+    memset(fbrBin, 0, nBin * sizeof(ITYPE));  
+
+    std::vector<ITYPE> UB;
+    std::vector<ITYPE> LB;
+
+    // Bin boundaries
+    for (int i = 0; i < nBin; i++) {
+        UB.push_back(0);
+        LB.push_back(0);
+    }
+
+    LB[0] = 0;   UB[0] = 101;  // 1 WARP
+    LB[1] = 100;   UB[1] = 5001;  // 2 WARP
+    LB[2] = 5000;   UB[2] = 10001;  // 4 WARP
+    LB[3] = 10000;   UB[3] = X.totNnz + 1; // 8 WARP
+
+    for(ITYPE slc = 0; slc <  X.fbrIdx[0].size(); ++slc) {
+
+        for (int fbr = X.fbrPtr[0][slc]; fbr < X.fbrPtr[0][slc+1]; ++fbr){ 
+     
+            for (int bin = 0; bin < nBin; ++bin)  {
+
+                if (X.nnzPerFiber[fbr] > LB[bin] && X.nnzPerFiber[fbr] < UB[bin]) {
+                        fbrBin[bin]++;
+                        break;
+                }
+            }
+        }
+    }
+
+    for (int i = 0; i < nBin; ++i)
+       cout << fbrBin[i] << " " ;
+    cout << endl;
+
     return 0;
 }
 
@@ -2401,7 +2439,7 @@ inline int mm_partition_reuseBased(Tensor *arrX, Tensor &X, TiledTensor *MTX, Op
 
         if(!modeDone)
              mode = shortestMode;//mode = -1;
-    
+    // mode = 0;
         /*populate new partitions*/
         if(mode > -1){
             X.partPerNnz[idx] = mode;
@@ -3108,9 +3146,9 @@ inline int randomize_mats(const Tensor &X, Matrix *U, const Options &Opt){
             for(long c = 0; c < U[mode].nCols; ++c){ // or u[mode].nCols 
                 
                 if(Opt.doCPD)
-                    U[mode].vals[r * U[mode].nCols + c] = RandomValue(); //mode + .5;//1.5 * (mode+1);;// .1 * drand48(); //1 ;//; //
+                   U[mode].vals[r * U[mode].nCols + c] = RandomValue(); //mode + .5;//1.5 * (mode+1);;// .1 * drand48(); //1 ;//; //
                 else
-                    U[mode].vals[r * U[mode].nCols + c] = mode + .5;//1.5
+                   U[mode].vals[r * U[mode].nCols + c] = mode + .5;//1.5
             }
         }
     }
@@ -3140,7 +3178,6 @@ inline void write_output_ttmY(semiSpTensor &Y, ITYPE mode, string outFile){
         fp << endl;  
     }
 }
-
 
 inline void print_matrix(Matrix *U, ITYPE mode){
     
@@ -3174,7 +3211,7 @@ inline void write_output(Matrix *U, ITYPE mode, string outFile){
 }
 
 inline void correctness_check(DTYPE *out, DTYPE *COOout, int nr, int nc){
-   
+    cout << "Correctness might not MATCH! Change random to fixed" << endl;
     long mismatch = 0;
     DTYPE maxDiff = 0;
     DTYPE precision = 0.1;

@@ -5,7 +5,7 @@
 #include <utility>  
 #include <math.h> 
 #include <omp.h>
-#include <cuda.h>
+// #include <cuda.h>
 #include "mttkrp_cpu.h"
 #include "mttkrp_gpu.h" 
 #include "cpd_cpu.h"
@@ -14,7 +14,7 @@ using namespace std;
 
 int main(int argc, char* argv[]){ 
 
-    cudaDeviceSetCacheConfig(cudaFuncCachePreferL1);
+    // cudaDeviceSetCacheConfig(cudaFuncCachePreferL1);
     Options Opt = parse_cmd_options(argc, argv);
     Opt.doCPD = true;
     Opt.impType = 12;
@@ -140,6 +140,7 @@ int main(int argc, char* argv[]){
         mm_partition_reuseBased(arrX, X, ModeWiseTiledX, Opt);
         populate_paritions(X, ModeWiseTiledX);
         
+        omp_set_num_threads(X.ndims);
         // #pragma omp parallel 
         {
             // #pragma omp for 
@@ -166,6 +167,31 @@ int main(int argc, char* argv[]){
     cpd(X, ModeWiseTiledX, U, Opt, lambda);
     printf("COO CPU CPD time: %.3f sec \n", seconds() - cpd_t0);
     free(lambda);
+
+    if(Opt.correctness){
+        if (Opt.impType == 1) {
+            cout << "Already running COO seq on CPU!" << endl; 
+            exit(0);
+        }
+        if(Opt.verbose && (Opt.impType == 12 || Opt.impType == 14))
+            cout << "checking only the last mode. " << endl;
+        // Opt.mode = 0;//X.modeOrder[2];
+        Opt.mode = ((Opt.impType == 12 || Opt.impType == 14 ) ? X.ndims-1 : Opt.mode);
+        int mode = Opt.mode;
+        int nr = U[mode].nRows;  
+        int nc = U[mode].nCols;
+        DTYPE *out = (DTYPE*)malloc(nr * nc * sizeof(DTYPE));
+        memcpy(out, U[mode].vals, nr*nc * sizeof(DTYPE));
+        print_matrix(U, mode);
+        randomize_mats(X, U, Opt);
+        zero_mat(X, U, mode);
+
+        cout << "correctness with COO on mode " << mode <<". "<< endl;
+        ((X.ndims == 3) ?  MTTKRP_COO_CPU(X, U, Opt) :  MTTKRP_COO_CPU_4D(X, U, Opt));
+         // MTTKRP_HCSR_CPU_slc(X, TiledX, U, Opt);
+        print_matrix(U, mode);
+        correctness_check(out, U[mode].vals, nr, nc);
+    }
 }
 
 

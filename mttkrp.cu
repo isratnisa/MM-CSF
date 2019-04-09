@@ -41,7 +41,9 @@ int main(int argc, char* argv[]){
         double t0 = seconds();
         // print_COOtensor(X);
         create_HCSR(X, Opt);
+        get_nnzPerFiberData(X);
         tensor_stats(X);
+
         // ((X.ndims == 3) ? print_HCSRtensor(X) : print_HCSRtensor_4D(X));  
     }
     // COO CPU   

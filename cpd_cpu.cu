@@ -434,7 +434,7 @@ double cpd(Tensor &X, TiledTensor *MMCSF, Matrix * U, Options Opt, DTYPE * lambd
     ITYPE rank = U[0].nCols;
     Matrix tmpU;
     ITYPE max_dim = 0;
-    int niters = 5;
+    int niters = 10;//Opt.cpdIters;
     double tol = 1e-5;
 
     for(ITYPE m = 0; m < ndims; ++m) {
@@ -498,21 +498,32 @@ double cpd(Tensor &X, TiledTensor *MMCSF, Matrix * U, Options Opt, DTYPE * lambd
     /*GPU pinters - for reuse declaring here*/
     ITYPE *dInds2, *dfbrPtr1, *dfbrIdx1, *dFbrLikeSlcInds;
     DTYPE *dVals, *dU;
-    
-    // init_GPU(MMCSF, U, Opt, &dInds2, &dfbrPtr1, &dfbrIdx1, &dFbrLikeSlcInds, &dVals, &dU);
+    t0 = seconds();
+    init_GPU(MMCSF, U, Opt, &dInds2, &dfbrPtr1, &dfbrIdx1, &dFbrLikeSlcInds, &dVals, &dU);
+    printf("  \t Init GPU = %.3f \n", seconds() - t0);
+    unsigned int *szDU =  new unsigned int[X.ndims];
+  
+    for (int m = 0; m < X.ndims; ++m)
+      szDU[m] = U[m].nRows * U[m].nCols;
+
+    int loc = 0;
 
     t_cpd = seconds();
     for(int it=0; it < niters; ++it) {
         double cpd_t0 = seconds();
 
         for(ITYPE m=0; m < ndims; ++m) {
-            cout << "\nit " << it << ", mode " << m << ":" << endl;
+            // if(Opt.verbose)
+              cout << "\nit " << it << ", mode " << m << ":" << endl;
             // fa << "\nit " << it << ", mode " << m << ":" << endl;
             // fu << "\nit " << it << ", mode " << m << ":" << endl;
             // fa << "Init ATA: " << endl;
             // for(ITYPE m = 0; m < ndims; ++m) {
             //   write_output(ATA, m, ata_file);
             // }
+            loc = 0;
+            for (int mm = 0; mm < m; ++mm)
+              loc += szDU[mm];
 
             t0 = seconds();
             Opt.mode = m;
@@ -521,19 +532,20 @@ double cpd(Tensor &X, TiledTensor *MMCSF, Matrix * U, Options Opt, DTYPE * lambd
               X.modeOrder[i] = (m+i) % ndims; 
             tmpU.nRows = U[m].nRows;
             /* Initialize U[mode] */
-            zero_mat(X, U, m);
-            printf("  \t Init mat = %.3f \n", seconds() - t0);
+            // zero_mat(X, U, m);
+            // if(Opt.verbose)
+              printf("  \t Init mat = %.3f \n", seconds() - t0);
 
             /* U[m]: row-major. in-place update */
             
             /*On GPU*/
             double mttkrp_t0 = seconds();
-            // MTTKRP_MIHCSR_GPU_oneMode_forCPD(MMCSF, U, Opt, m, it,
-            //   dInds2, dfbrPtr1, dfbrIdx1, dFbrLikeSlcInds, dVals, dU);
+            MTTKRP_MIHCSR_GPU_oneMode_forCPD(MMCSF, U, Opt, m, it,
+              dInds2, dfbrPtr1, dfbrIdx1, dFbrLikeSlcInds, dVals, dU);
             // ((X.ndims == 3) ?  MTTKRP_COO_CPU(X, U, Opt) :  MTTKRP_COO_CPU_4D(X, U, Opt)); 
-            // printf("after GPU vals %f\n", U[m].vals[0] );
+            // printf("in CPD GPU vals %f\n", U[m].vals[0] );
             // zero_mat(X, U, m);
-            ((X.ndims == 3) ?  MTTKRP_COO_CPU(X, U, Opt) :  MTTKRP_COO_CPU_4D(X, U, Opt)); 
+            // ((X.ndims == 3) ?  MTTKRP_COO_CPU(X, U, Opt) :  MTTKRP_COO_CPU_4D(X, U, Opt)); 
             // printf("after COO vals %f\n", U[m].vals[0] );
             double mttkrp_time = seconds() - mttkrp_t0;
             printf("  \t MTTKRP = %u (%.3f)\n", m+1, mttkrp_time);
@@ -549,7 +561,8 @@ double cpd(Tensor &X, TiledTensor *MMCSF, Matrix * U, Options Opt, DTYPE * lambd
             /* Solve ? * tmpATA = U[m] */
             t0 = seconds();
             MatrixSolveNormals(m, ndims, ATA, tmpATA, U[m]);
-            printf("  \t MatrixSolveNormals = %.3f \n", seconds() - t0);
+            // if(Opt.verbose)
+              printf("  \t MatrixSolveNormals = %.3f \n", seconds() - t0);
 
             /* Normalized U[m], store the norms in lambda. Use different norms to avoid precision explosion. */
             t0 = seconds();
@@ -558,7 +571,10 @@ double cpd(Tensor &X, TiledTensor *MMCSF, Matrix * U, Options Opt, DTYPE * lambd
             } else {
                 MatrixMaxNorm(U[m], lambda);
             }
-            printf("  \t MatrixNorm = %.3f \n", seconds() - t0);
+
+            cudaMemcpy(dU + loc, &(U[m].vals[0]), U[m].nRows * U[m].nCols * sizeof(DTYPE), cudaMemcpyHostToDevice);
+            // if(Opt.verbose)
+              printf("  \t MatrixNorm = %.3f \n", seconds() - t0);
             // fu << "Normalized U[m]: " << endl;
             // write_output(U, m, U_file);
             // fu << "Init lambda: " << endl;
@@ -577,7 +593,8 @@ double cpd(Tensor &X, TiledTensor *MMCSF, Matrix * U, Options Opt, DTYPE * lambd
                   &blas_rank, &blas_nrows, 
                   &alpha, U[m].vals, &blas_rank, 
                   &beta, ATA[m].vals, &blas_rank);
-            printf("  \t ssyrk = %.3f \n", seconds() - t0);
+            // if(Opt.verbose)
+              printf("  \t ssyrk = %.3f \n", seconds() - t0);
             // fa << "Updated ATA[m]: " << endl;
             // write_output(ATA, m, ata_file);
 
@@ -589,7 +606,7 @@ double cpd(Tensor &X, TiledTensor *MMCSF, Matrix * U, Options Opt, DTYPE * lambd
         // fu << endl; 
         fit = KruskalTensorFit(X, lambda, U, tmpU, ATA, tmpATA, X_normsq);
         double cpd_time = seconds() - cpd_t0;
-
+        // if(it == niters - 1)
         printf("  its = %u (%.3f), fit = %0.5lf  delta = %+0.4e\n",
           it+1, cpd_time, fit, fit - oldfit);
 

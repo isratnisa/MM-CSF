@@ -840,8 +840,8 @@ __global__ void mttkrp_MIHCSR_kernel_fbr_atomic_fbrLvlPar(DTYPE * vals, ITYPE *f
 		
 		tmp_val = 0;
 		unsigned int idx0 = fbrIdx1[fbr];// dInds1[fbrPtr1[fbr]];  
-		unsigned int idx2 = fbrLikeSlcInds[fbr];//slc;  
-        
+		unsigned int idx2 = fbrLikeSlcInds[fbr];//slc; 
+		
         for(unsigned int x = fbrPtr1[fbr] + workId; x < fbrPtr1[fbr+1]; x+=warpPerSlice) {
 
 	        unsigned int idx1 = dInds2[x];                    
@@ -853,6 +853,7 @@ __global__ void mttkrp_MIHCSR_kernel_fbr_atomic_fbrLvlPar(DTYPE * vals, ITYPE *f
         for(unsigned int r=laneId; r<R; r+=32) { 
         	tmp = tmp_val * dU2[idx2 * R + r] ;
         	atomicAdd(&dU0[idx0 * R + r], tmp); //2PR
+
         }    
 	}
 }
@@ -1086,6 +1087,9 @@ __global__ void mttkrp_MIHCSR_kernel_all_atomic_fbrLvlPar(DTYPE * vals, ITYPE *f
 		tmp_val = 0;
 		unsigned int idx1 = fbrLikeSlcInds[fbr];//slc;  
 		unsigned int idx2 = fbrIdx1[fbr];// dInds1[fbrPtr1[fbr]];  
+
+		// if(laneId == 0 && idx1 == 0)
+		// 	printf("GPU %d %d %f %f\n", idx1, idx2, dU1[idx1 * R], dU2[idx2 * R] );
 
 		for(unsigned int r=laneId; r<R; r+=32) 
            	tmp = dU1[idx1 * R + r] * dU2[idx2 * R + r] ; //1PR
@@ -3042,6 +3046,274 @@ int MTTKRP_MIHCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 	cudaFree(dfbrIdx0); cudaFree(dfbrIdx1); cudaFree(dFbrIdx2);
 	cudaFree(dfbrPtr0); cudaFree(dfbrPtr1); cudaFree(dFbrPtr2);
 	cudaFree(dFbrLikeSlcInds);
+
+	return 0;
+}
+
+int init_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt, ITYPE **dInds2, ITYPE **dfbrPtr1, ITYPE **dfbrIdx1, ITYPE **dFbrLikeSlcInds, DTYPE **dVals, DTYPE **dU){
+
+	
+	ITYPE mode0 = 0;//TiledX[0].modeOrder[0];
+    ITYPE mode1 = 1;;//TiledX[0].modeOrder[1];
+    ITYPE mode2 = 2;//TiledX[0].modeOrder[2];
+    ITYPE mode3 = 3;//((TiledX[0].ndims == 4) ? TiledX[0].modeOrder[3] : 0) ;
+
+	// if(iter == 0 && cpdMode == 0)
+	ITYPE dLoc = 0, dSlcLoc = 0, dSlcIdxLoc = 0, dFbrLoc =0,  dFbrIdxLoc =0, dBinLoc = 0, dFbrLoc2 =0;
+	ITYPE totNnz = 0, totSlcPtr = 0, totSlcIdx = 0, totFbrPtr = 0, totFbrIdx = 0, totFbrPtr2 = 0;
+	
+	for (int m = 0; m < TiledX[0].ndims; ++m){
+		
+		if (TiledX[m].totNnz == 0) continue;
+		
+		totNnz += TiledX[m].totNnz;
+		totFbrPtr += TiledX[m].fbrPtr[1].size() ;
+		totFbrIdx += TiledX[m].fbrIdx[1].size() ;
+		totFbrPtr2 += ((TiledX[m].ndims == 4) ? TiledX[m].fbrPtr[2].size() : 0) ;
+	}
+
+	/*allocate and memcpy GPU memory*/
+	checkCuda(cudaMalloc((void**) dVals, totNnz * sizeof(DTYPE)), 0);
+	checkCuda(cudaMalloc((void**) dfbrPtr1, totFbrPtr * sizeof(ITYPE)), 0);
+	checkCuda(cudaMalloc((void**) dfbrIdx1, totFbrIdx * sizeof(ITYPE)), 0);
+	checkCuda(cudaMalloc((void**) dFbrLikeSlcInds, totFbrIdx * sizeof(ITYPE)), 0);
+
+	if(TiledX[0].ndims == 3)
+		checkCuda(cudaMalloc((void**) dInds2, totNnz * sizeof(ITYPE)), 0);
+	
+
+	for (int m = 0; m < TiledX[0].ndims; ++m){	
+
+		if(m > 0) {
+
+			if (TiledX[m-1].totNnz > 0) {
+			
+				dLoc += TiledX[m-1].totNnz;
+				dSlcLoc += TiledX[m - 1].fbrPtr[0].size(); // all m same
+				dSlcIdxLoc += TiledX[m - 1].fbrIdx[0].size(); 
+				dFbrLoc += TiledX[m - 1].fbrPtr[1].size();
+				dFbrIdxLoc += TiledX[m - 1].fbrIdx[1].size();
+			}
+		}
+
+		if (TiledX[m].totNnz == 0) continue;
+
+		checkCuda(cudaMemcpy(*dVals + dLoc, &(TiledX[m].vals[0]), TiledX[m].totNnz * sizeof(DTYPE),cudaMemcpyHostToDevice), 0);
+		checkCuda(cudaMemcpy(*dfbrPtr1 + dFbrLoc, &(TiledX[m].fbrPtr[1][0]), TiledX[m].fbrPtr[1].size() * sizeof(ITYPE),cudaMemcpyHostToDevice), 0);
+		checkCuda(cudaMemcpy(*dfbrIdx1 + dFbrIdxLoc, &(TiledX[m].fbrIdx[1][0]), TiledX[m].fbrIdx[1].size() * sizeof(ITYPE),cudaMemcpyHostToDevice), 0);
+		checkCuda(cudaMemcpy(*dFbrLikeSlcInds + dFbrIdxLoc, &(TiledX[m].fbrLikeSlcInds[0]), TiledX[m].fbrIdx[1].size() * sizeof(ITYPE),cudaMemcpyHostToDevice), 0);
+		checkCuda(cudaMemcpy(*dInds2 + dLoc, &(TiledX[m].inds[TiledX[m].modeOrder[2]][0]), TiledX[m].totNnz * sizeof(ITYPE),cudaMemcpyHostToDevice), 0);			
+	}
+	
+	// //Matrices
+    unsigned int *szDU =  new unsigned int[TiledX[0].ndims];
+
+	ITYPE mtxSize = ((TiledX[0].ndims == 3) ? (U[mode0].nRows + U[mode1].nRows + U[mode2].nRows) * U[mode0].nCols
+		: (U[mode0].nRows + U[mode1].nRows + U[mode2].nRows + U[mode3].nRows) * U[mode0].nCols );
+	
+	for (int m = 0; m < TiledX[0].ndims; ++m)
+		szDU[m] = U[m].nRows * U[m].nCols;
+
+	checkCuda(cudaMalloc((void**) dU, mtxSize * sizeof(DTYPE)), 0);
+	
+	// cudaMemset(dU+0, 0,  U[mode0].nRows * U[mode0].nCols * sizeof(DTYPE));
+	checkCuda(cudaMemcpy(*dU + 0, &(U[mode0].vals[0]), U[mode0].nRows * U[mode0].nCols * sizeof(DTYPE), cudaMemcpyHostToDevice), 0);
+	checkCuda(cudaMemcpy(*dU + szDU[0], &(U[mode1].vals[0]), U[mode1].nRows * U[mode1].nCols * sizeof(DTYPE), cudaMemcpyHostToDevice), 0);
+	checkCuda(cudaMemcpy(*dU + szDU[0] + szDU[1], &(U[mode2].vals[0]), U[mode2].nRows * U[mode2].nCols * sizeof(DTYPE), cudaMemcpyHostToDevice), 0);
+    // MTTKRP_MIHCSR_GPU_oneMode_forCPD(TiledX, U, Opt, 0, 0,
+ 	//  dInds2, dfbrPtr1, dfbrIdx1, dFbrLikeSlcInds, dVals, dU);
+}
+
+int MTTKRP_MIHCSR_GPU_oneMode_forCPD(TiledTensor *TiledX, Matrix *U, const Options &Opt, int cpdMode, int iter,
+	ITYPE *dInds2, ITYPE *dfbrPtr1, ITYPE *dfbrIdx1, ITYPE *dFbrLikeSlcInds, DTYPE *dVals, DTYPE *dU){
+
+	cudaEvent_t start, stop;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
+    float mili;
+	
+	ITYPE *dInds3, *dfbrPtr0, *dfbrIdx0, *dFbrPtr2, *dFbrIdx2, *dSlcMapperBin;
+	// DTYPE *dVals;
+	ITYPE dLoc = 0, dSlcLoc = 0, dSlcIdxLoc = 0, dFbrLoc =0,  dFbrIdxLoc =0, dBinLoc = 0, dFbrLoc2 =0;
+	
+	unsigned int *dULoc = new unsigned int[TiledX[0].ndims];
+    unsigned int *szDU =  new unsigned int[TiledX[0].ndims];
+	
+	for (int m = 0; m < TiledX[0].ndims; ++m)
+		szDU[m] = U[m].nRows * U[m].nCols;
+
+	int loc = 0;
+	for (int m = 0; m < cpdMode; ++m)
+		loc += szDU[m];
+
+	cudaMemset(dU+loc, 0,  U[cpdMode].nRows * U[cpdMode].nCols * sizeof(DTYPE));
+		
+	// BLOCK and GRID
+	int BLOCKSIZE = 512;
+    float GPUTime = 0, CPUtimer = 0, allModeGPUTime = 0;
+
+	dLoc = 0, dSlcLoc = 0, dSlcIdxLoc = 0; dFbrLoc =0, dFbrIdxLoc = 0, dFbrLoc2= 0;
+
+	int MTTKRPmode = cpdMode;
+	// for (int MTTKRPmode = 0; MTTKRPmode < TiledX[0].ndims; ++MTTKRPmode)
+	{	
+		for (int m = 0; m < TiledX[0].ndims; ++m){
+
+			/* matrix order according to mode order*/ 
+			for (int mm = 0; mm < TiledX[0].ndims; ++mm){
+				
+				int curMode = TiledX[m].modeOrder[mm];
+				dULoc[mm] = 0;
+				
+				for (int q = 0; q < curMode; ++q)
+					dULoc[mm] +=  szDU[q % TiledX[0].ndims]; //1 2 3 0
+			}	
+
+			dBinLoc = 0;
+			
+			if(m > 0) {
+
+				if (TiledX[m-1].totNnz > 0) {
+
+					dLoc += TiledX[m-1].totNnz;
+					dSlcLoc += TiledX[m - 1].fbrPtr[0].size(); 
+					dSlcIdxLoc += TiledX[m - 1].fbrIdx[0].size(); 
+					dFbrLoc += TiledX[m - 1].fbrPtr[1].size();
+					dFbrIdxLoc += TiledX[m - 1].fbrIdx[1].size();
+					dFbrLoc2 += ((TiledX[0].ndims == 4) ? TiledX[m - 1].fbrPtr[2].size(): 0) ;
+				}
+			}
+
+			BLOCKSIZE = 512;
+			dim3 block(BLOCKSIZE, 1, 1), grid(1, 1, 1);
+
+			if (TiledX[m].totNnz == 0) continue;
+
+			cuda_timer_start(start);
+
+			if(TiledX[m].modeOrder[0] == MTTKRPmode && TiledX[m].totNnz){
+
+				// if(Opt.verbose)
+					// cout << "Slc atomics - " ;
+
+				// BLOCKSIZE = 128;
+				BLOCKSIZE = Opt.TBsize;
+				dim3 block(BLOCKSIZE, 1, 1), grid(1, 1, 1);
+				
+				int warpPerFbr = Opt.warpPerSlice;//4;//;
+				int logOfWarpPerFbr = log2(warpPerFbr);
+				int fbrPerWarp = Opt.fiberPerWarp;//1;//BLOCKSIZE/32; // dont overflow TB
+				int logOfFbrPerWarp = log2(fbrPerWarp );
+
+				if( (warpPerFbr > (BLOCKSIZE/32)) || (fbrPerWarp > (BLOCKSIZE/32)) ){
+					cout << "warpPerFbr (-w) or fbrPerWarp (-s) cannot be higher than threadblock size!"
+					<< endl << "hint: increase -b!" << endl;
+					exit(0);
+				}
+
+				grid.x = ( warpPerFbr * 32 * ((TiledX[m].nFibers + fbrPerWarp-1)/fbrPerWarp) + BLOCKSIZE - 1) / BLOCKSIZE;
+	
+				if(TiledX[0].ndims == 3)
+					mttkrp_MIHCSR_kernel_slc_atomic_fbrLvlPar<<<grid, block, 0, 0>>>(dVals + dLoc, dFbrLikeSlcInds + dFbrIdxLoc, 
+					dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrIdxLoc, TiledX[m].nFibers, 
+					dU + dULoc[0], dU + dULoc[1], dU + dULoc[2], Opt.mode, Opt.R, warpPerFbr, logOfWarpPerFbr, fbrPerWarp, logOfFbrPerWarp);
+		
+				else if(TiledX[0].ndims == 4)
+					mttkrp_MIHCSR_kernel_slc_atomic_fbrLvlPar_4D<<<grid, block, 0, 0>>>(dVals + dLoc, dFbrLikeSlcInds + dFbrIdxLoc, 
+					dInds3 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrIdxLoc, dFbrPtr2 + dFbrLoc2, dFbrIdx2 + dFbrLoc2, 
+					TiledX[m].nFibers, dU + dULoc[0], dU + dULoc[1], dU + dULoc[2], dU + dULoc[3], Opt.mode, Opt.R, warpPerFbr, logOfWarpPerFbr, fbrPerWarp, logOfFbrPerWarp);
+			}
+
+			else if(TiledX[m].modeOrder[TiledX[0].ndims-2] == MTTKRPmode && TiledX[m].totNnz){
+			
+				// if(Opt.verbose)
+					// cout << "Fbr atomics - ";
+
+				BLOCKSIZE = Opt.TBsize;
+				dim3 block(BLOCKSIZE, 1, 1), grid(1, 1, 1);
+
+				int warpPerFbr = Opt.warpPerSlice;//4;//;BLOCKSIZE/32;//
+				if(warpPerFbr > (BLOCKSIZE/32)){
+					cout << "warpPerFbr (-w) cannot be higher than threadblock size! hint: increase -b!" << endl;
+					exit(0);
+				}
+				int logOfWarpPerFbr = log2(warpPerFbr);
+				
+				grid.x = ( warpPerFbr * 32 * TiledX[m].nFibers + BLOCKSIZE - 1) / BLOCKSIZE;
+
+				if(TiledX[0].ndims == 3)
+					mttkrp_MIHCSR_kernel_fbr_atomic_fbrLvlPar<<<grid, block, 0, 0>>>(dVals + dLoc, dFbrLikeSlcInds + dFbrIdxLoc, 
+					dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrIdxLoc, TiledX[m].nFibers, 
+					dU + dULoc[1], dU + dULoc[2], dU + dULoc[0], Opt.mode, Opt.R, warpPerFbr, logOfWarpPerFbr);
+				
+				else if (TiledX[0].ndims == 4)
+					mttkrp_MIHCSR_kernel_fbr_atomic_fbrLvlPar_4D<<<grid, block, 0, 0>>>(dVals + dLoc, dFbrLikeSlcInds + dFbrIdxLoc, 
+					dInds3 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrIdxLoc, dFbrPtr2 + dFbrLoc2, dFbrIdx2 + dFbrLoc2, 
+					TiledX[m].nFibers,  dU + dULoc[2], dU + dULoc[3], dU + dULoc[0], dU + dULoc[1], Opt.mode, Opt.R, warpPerFbr, logOfWarpPerFbr);
+			}
+
+			else if(TiledX[m].modeOrder[TiledX[0].ndims-1] == MTTKRPmode && TiledX[m].totNnz){
+
+				// if(Opt.verbose)
+					// cout << "nnz atomics - " ;
+
+				BLOCKSIZE = Opt.TBsize;
+				dim3 block(BLOCKSIZE, 1, 1), grid(1, 1, 1);
+
+				int warpPerFbr = Opt.warpPerSlice;//4;//;BLOCKSIZE/32;//
+				if(warpPerFbr > (BLOCKSIZE/32)){
+					cout << "warpPerFbr (-w) cannot be higher than threadblock size! hint: increase -b!" << endl;
+					exit(0);
+				}
+				int logOfWarpPerFbr = log2(warpPerFbr);
+				
+				grid.x = ( warpPerFbr * 32 * TiledX[m].nFibers + BLOCKSIZE - 1) / BLOCKSIZE;
+
+				if (TiledX[0].ndims == 3)
+					mttkrp_MIHCSR_kernel_all_atomic_fbrLvlPar<<<grid, block, 0, 0>>>(dVals + dLoc, dFbrLikeSlcInds + dFbrIdxLoc, 
+					dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrIdxLoc, TiledX[m].nFibers, 
+					dU + dULoc[2], dU + dULoc[0], dU + dULoc[1], Opt.mode, Opt.R, warpPerFbr, logOfWarpPerFbr); 
+
+				else if (TiledX[0].ndims == 4)
+					mttkrp_MIHCSR_kernel_all_atomic_fbrLvlPar_4D<<<grid, block, 0, 0>>>(dVals + dLoc, dFbrLikeSlcInds + dFbrIdxLoc, 
+					dInds3 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrIdxLoc, dFbrPtr2 + dFbrLoc2, dFbrIdx2 + dFbrLoc2, 
+					TiledX[m].nFibers,  dU + dULoc[3], dU + dULoc[0], dU + dULoc[1], dU + dULoc[2], Opt.mode, Opt.R, warpPerFbr, logOfWarpPerFbr);
+			}
+		
+			cuda_timer_stop(start, stop, mili);
+		    GPUTime += mili;
+
+		    if(Opt.verbose)
+		    {
+		    	cout << "Tile: " << m << " - time: " << mili << " ms";
+		    	cout <<" nnz: " << TiledX[m].totNnz << " nFibers: "
+		    	<< TiledX[m].fbrPtr[1].size() << " nSlc " << TiledX[m].fbrIdx[0].size() << " ";
+				cout << " modeOrder: " << TiledX[m].modeOrder[0] <<" " << TiledX[m].modeOrder[1] <<" "
+				<< TiledX[m].modeOrder[2];
+				cout << endl;
+			}   
+		}
+		// cout << "MI-HCSR-GPU-mode "<< MTTKRPmode <<" : " << GPUTime << "," << endl;
+		allModeGPUTime += GPUTime; 
+	}
+	// int loc = 0;
+	// for (int m = 0; m < cpdMode; ++m)
+	// 	loc += szDU[m];
+	// int loc =  szDU[0];
+
+	/* Copying output matrix from GPU to CPU for correctness check */
+	checkCuda(cudaMemcpy(&U[cpdMode].vals[0], dU + loc, U[cpdMode].nRows * U[cpdMode].nCols * sizeof(DTYPE), cudaMemcpyDeviceToHost), 0);
+
+	if(iter == Opt.cpdIters - 1 && cpdMode == TiledX[0].ndims - 1)
+	{
+		cout << "Freeing variable " << endl;
+		cudaFree(dVals); 
+		cudaFree(dU); //cudaFree(dU1); cudaFree(dU2); cudaFree(dU3);
+		cudaFree(dfbrIdx0); cudaFree(dInds2); cudaFree(dInds3); 
+		cudaFree(dfbrIdx0); cudaFree(dfbrIdx1); cudaFree(dFbrIdx2);
+		cudaFree(dfbrPtr0); cudaFree(dfbrPtr1); cudaFree(dFbrPtr2);
+		cudaFree(dFbrLikeSlcInds);
+	}
 
 	return 0;
 }
