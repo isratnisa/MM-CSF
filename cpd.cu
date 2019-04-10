@@ -36,83 +36,10 @@ int main(int argc, char* argv[]){
     // HCSR CPU  
     create_HCSR(X, Opt);    
 
-    // HYB CPU
-    if(Opt.impType == 10){
-        
-        HYBTensor HybX(X);
-        ((X.ndims == 3) ?  create_HYB(HybX, X, Opt) :  create_HYB_4D(HybX, X, Opt));   
-        make_HybBin(HybX, Opt);  
-        // MTTKRP_HYB_GPU(HybX, U, Opt);      
-    }
-
     /* Tiled versions */
-    else if(Opt.impType >= 5 && Opt.impType < 10){
-
-        int tilingMode = X.modeOrder[X.ndims -1];
-        Opt.tileSize = (X.dims[tilingMode] + Opt.nTile - 1)/Opt.nTile;  
-        
-        if(Opt.nTile > X.dims[tilingMode]){
-            cout << "Number of tiles ("<< Opt.nTile << ") should be as minimum as K's dimension (" << X.dims[tilingMode]  << "). Exiting."<< endl ;
-            exit(0);
-        }
-        // split X into tiles based on K indices
-        make_KTiling(X, TiledX, Opt);
-        
-        // create HCSR for each tile
-        for (int tile = 0; tile < Opt.nTile; ++tile){
-            if(TiledX[tile].totNnz > 0)
-                create_TiledHCSR(TiledX, Opt, tile);
-        }  
-
-        // Split tiles into bins accordin to nnz in slice
-        for (int tile = 0; tile < Opt.nTile; ++tile){
-            if(TiledX[tile].totNnz > 0)
-                make_TiledBin(TiledX, Opt, tile);
-        }
-        // TILED HCSR GPU
-        if(Opt.impType == 8){
-        
-            create_fbrLikeSlcInds(TiledX, 0);
-            create_fbrLikeSlcInds(X, Opt);
-            // MTTKRP_B_HCSR_GPU(TiledX, U, Opt);
-        }
-    }
-
-     /* ONE-CSF*/
-    else if(Opt.impType == 13 || Opt.impType == 14 ){
-
-        if(Opt.verbose)
-            cout << "Starting ONE-CSF: " << endl;
-        
-       /* on GPU tiled (skipping on tiled gpu due to time constraints)*/
-        if(Opt.impType == 14){ 
-
-            int tilingMode = X.modeOrder[X.ndims -1];
-            Opt.tileSize = (X.dims[tilingMode] + Opt.nTile - 1)/Opt.nTile;  
-
-            // split X into tiles based on K indices
-            make_KTiling(X, TiledX, Opt);
-
-            // create HCSR for each tile
-            for (int tile = 0; tile < Opt.nTile; ++tile){
-
-                if(TiledX[tile].totNnz > 0){
-                    create_TiledHCSR(TiledX, Opt, tile);
-                    create_fbrLikeSlcInds(TiledX, tile);
-                }
-            }  
-
-            // Split tiles into bins accordin to nnz in slice
-            for (int tile = 0; tile < Opt.nTile; ++tile){
-                if(TiledX[tile].totNnz > 0)
-                    make_TiledBin(TiledX, Opt, tile);
-            }
-            // MTTKRP_ONE_HCSR_GPU(TiledX, U, Opt);
-        }
-    }
 
     /* MM-CSF*/
-    else if(Opt.impType == 11 || Opt.impType == 12){
+    if(Opt.impType == 11 || Opt.impType == 12){
 
         double t0 = seconds();
 

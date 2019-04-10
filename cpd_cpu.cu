@@ -96,7 +96,8 @@ int MatrixSolveNormals(
 
   double t0 = seconds();
   MatrixDotMulSeqUpperTriangle(mode, ndims, ATA, tmpATA);
-  printf("  \t   MatrixDotMulSeqTriangle = %.3f \n", seconds() - t0);
+
+    // printf("  \t   MatrixDotMulSeqTriangle = %.3f \n", seconds() - t0);
   // fa << "tmpATA after MatrixDotMulSeqTriangle: " << endl;
   // write_output(&tmpATA, 0, "ata.txt");
 
@@ -146,7 +147,7 @@ int MatrixSolveNormals(
 
     free(ipiv);
   }
-  printf("  \t   solver = %.3f \n", seconds() - t0);
+    // printf("  \t   solver = %.3f \n", seconds() - t0);
 
   return 0;
 }
@@ -434,7 +435,7 @@ double cpd(Tensor &X, TiledTensor *MMCSF, Matrix * U, Options Opt, DTYPE * lambd
     ITYPE rank = U[0].nCols;
     Matrix tmpU;
     ITYPE max_dim = 0;
-    int niters = 10;//Opt.cpdIters;
+    int niters = Opt.cpdIters;
     double tol = 1e-5;
 
     for(ITYPE m = 0; m < ndims; ++m) {
@@ -506,14 +507,14 @@ double cpd(Tensor &X, TiledTensor *MMCSF, Matrix * U, Options Opt, DTYPE * lambd
     for (int m = 0; m < X.ndims; ++m)
       szDU[m] = U[m].nRows * U[m].nCols;
 
-    int loc = 0;
+    ITYPE loc = 0;
 
     t_cpd = seconds();
     for(int it=0; it < niters; ++it) {
         double cpd_t0 = seconds();
 
         for(ITYPE m=0; m < ndims; ++m) {
-            // if(Opt.verbose)
+           if(Opt.verbose)
               cout << "\nit " << it << ", mode " << m << ":" << endl;
             // fa << "\nit " << it << ", mode " << m << ":" << endl;
             // fu << "\nit " << it << ", mode " << m << ":" << endl;
@@ -533,7 +534,7 @@ double cpd(Tensor &X, TiledTensor *MMCSF, Matrix * U, Options Opt, DTYPE * lambd
             tmpU.nRows = U[m].nRows;
             /* Initialize U[mode] */
             // zero_mat(X, U, m);
-            // if(Opt.verbose)
+           if(Opt.verbose)
               printf("  \t Init mat = %.3f \n", seconds() - t0);
 
             /* U[m]: row-major. in-place update */
@@ -548,7 +549,8 @@ double cpd(Tensor &X, TiledTensor *MMCSF, Matrix * U, Options Opt, DTYPE * lambd
             // ((X.ndims == 3) ?  MTTKRP_COO_CPU(X, U, Opt) :  MTTKRP_COO_CPU_4D(X, U, Opt)); 
             // printf("after COO vals %f\n", U[m].vals[0] );
             double mttkrp_time = seconds() - mttkrp_t0;
-            printf("  \t MTTKRP = %u (%.3f)\n", m+1, mttkrp_time);
+            if(Opt.verbose)
+              printf("  \t MTTKRP = %u (%.3f)\n", m+1, mttkrp_time);
             total_mttkrp_time += mttkrp_time;
             
             // fu << "U[m] after MTTKRP: " << endl;
@@ -561,7 +563,7 @@ double cpd(Tensor &X, TiledTensor *MMCSF, Matrix * U, Options Opt, DTYPE * lambd
             /* Solve ? * tmpATA = U[m] */
             t0 = seconds();
             MatrixSolveNormals(m, ndims, ATA, tmpATA, U[m]);
-            // if(Opt.verbose)
+           if(Opt.verbose)
               printf("  \t MatrixSolveNormals = %.3f \n", seconds() - t0);
 
             /* Normalized U[m], store the norms in lambda. Use different norms to avoid precision explosion. */
@@ -573,7 +575,7 @@ double cpd(Tensor &X, TiledTensor *MMCSF, Matrix * U, Options Opt, DTYPE * lambd
             }
 
             cudaMemcpy(dU + loc, &(U[m].vals[0]), U[m].nRows * U[m].nCols * sizeof(DTYPE), cudaMemcpyHostToDevice);
-            // if(Opt.verbose)
+           if(Opt.verbose)
               printf("  \t MatrixNorm = %.3f \n", seconds() - t0);
             // fu << "Normalized U[m]: " << endl;
             // write_output(U, m, U_file);
@@ -593,7 +595,7 @@ double cpd(Tensor &X, TiledTensor *MMCSF, Matrix * U, Options Opt, DTYPE * lambd
                   &blas_rank, &blas_nrows, 
                   &alpha, U[m].vals, &blas_rank, 
                   &beta, ATA[m].vals, &blas_rank);
-            // if(Opt.verbose)
+           if(Opt.verbose)
               printf("  \t ssyrk = %.3f \n", seconds() - t0);
             // fa << "Updated ATA[m]: " << endl;
             // write_output(ATA, m, ata_file);
@@ -606,8 +608,8 @@ double cpd(Tensor &X, TiledTensor *MMCSF, Matrix * U, Options Opt, DTYPE * lambd
         // fu << endl; 
         fit = KruskalTensorFit(X, lambda, U, tmpU, ATA, tmpATA, X_normsq);
         double cpd_time = seconds() - cpd_t0;
-        // if(it == niters - 1)
-        printf("  its = %u (%.3f), fit = %0.5lf  delta = %+0.4e\n",
+        if(it == niters - 1)
+          printf("  its = %u (%.3f), fit = %0.5lf  delta = %+0.4e\n",
           it+1, cpd_time, fit, fit - oldfit);
 
         if(it > 0 && fabs(fit - oldfit) < tol) {

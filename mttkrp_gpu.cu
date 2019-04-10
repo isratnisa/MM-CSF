@@ -3022,7 +3022,7 @@ int MTTKRP_ONE_HCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 	
 	/* Copying output matrix from GPU to CPU for correctness check */
 	int MTTKRPmode = TiledX[0].ndims - 1;
-	int loc = ((TiledX[0].ndims == 3) ? szDU[0] + szDU[1] : szDU[0] + szDU[1] + szDU[2]);
+	ITYPE loc = ((TiledX[0].ndims == 3) ? szDU[0] + szDU[1] : szDU[0] + szDU[1] + szDU[2]);
 	checkCuda(cudaMemcpy(&U[MTTKRPmode].vals[0], dU + loc, U[MTTKRPmode].nRows * U[MTTKRPmode].nCols * sizeof(DTYPE), cudaMemcpyDeviceToHost), 0);
 
 	// check correctness
@@ -3116,10 +3116,10 @@ int MTTKRP_MIHCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 				// checkCuda(cudaMemcpy(dInds2 + dLoc, &(TiledX[m].inds[mode2][0]), TiledX[m].totNnz * sizeof(ITYPE),cudaMemcpyHostToDevice), 0);			
 				checkCuda(cudaMemcpy(dInds2 + dLoc, &(TiledX[m].inds[TiledX[m].modeOrder[2]][0]), TiledX[m].totNnz * sizeof(ITYPE),cudaMemcpyHostToDevice), 0);			
 
-			else if(m == 1)
-				checkCuda(cudaMemcpy(dInds2 + dLoc, &(TiledX[m].inds[TiledX[m].modeOrder[2]][0]), TiledX[m].totNnz * sizeof(ITYPE),cudaMemcpyHostToDevice), 0);			
-			else if(m == 2)
-				checkCuda(cudaMemcpy(dInds2 + dLoc, &(TiledX[m].inds[TiledX[m].modeOrder[2]][0]), TiledX[m].totNnz * sizeof(ITYPE),cudaMemcpyHostToDevice), 0);			
+			// else if(m == 1)
+			// 	checkCuda(cudaMemcpy(dInds2 + dLoc, &(TiledX[m].inds[TiledX[m].modeOrder[2]][0]), TiledX[m].totNnz * sizeof(ITYPE),cudaMemcpyHostToDevice), 0);			
+			// else if(m == 2)
+			// 	checkCuda(cudaMemcpy(dInds2 + dLoc, &(TiledX[m].inds[TiledX[m].modeOrder[2]][0]), TiledX[m].totNnz * sizeof(ITYPE),cudaMemcpyHostToDevice), 0);			
 		}
 		if(TiledX[m].ndims == 4){			
 			checkCuda(cudaMemcpy(dFbrPtr2 + dFbrLoc2, &(TiledX[m].fbrPtr[2][0]), TiledX[m].fbrPtr[2].size() * sizeof(ITYPE),cudaMemcpyHostToDevice), 0);
@@ -3420,9 +3420,9 @@ int MTTKRP_MIHCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 		cudaStreamDestroy(streams[bin]);
 
 	/* Copying output matrix from GPU to CPU for correctness check */
-	int MTTKRPmode = TiledX[0].ndims - 1;
-	int loc = ((TiledX[0].ndims == 3) ? szDU[0] + szDU[1] : szDU[0] + szDU[1] + szDU[2]);
-	checkCuda(cudaMemcpy(&U[MTTKRPmode].vals[0], dU + loc, U[MTTKRPmode].nRows * U[MTTKRPmode].nCols * sizeof(DTYPE), cudaMemcpyDeviceToHost), 0);
+	// int MTTKRPmode = TiledX[0].ndims - 1;
+	// ITYPE loc = ((TiledX[0].ndims == 3) ? szDU[0] + szDU[1] : szDU[0] + szDU[1] + szDU[2]);
+	// checkCuda(cudaMemcpy(&U[MTTKRPmode].vals[0], dU + loc, U[MTTKRPmode].nRows * U[MTTKRPmode].nCols * sizeof(DTYPE), cudaMemcpyDeviceToHost), 0);
 
 	cudaFree(dVals); 
 	cudaFree(dU); //cudaFree(dU1); cudaFree(dU2); cudaFree(dU3);
@@ -3430,6 +3430,7 @@ int MTTKRP_MIHCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 	cudaFree(dfbrIdx0); cudaFree(dfbrIdx1); cudaFree(dFbrIdx2);
 	cudaFree(dfbrPtr0); cudaFree(dfbrPtr1); cudaFree(dFbrPtr2);
 	cudaFree(dFbrLikeSlcInds);
+	cudaFree(dSlcMapperBin);
 
 	return 0;
 }
@@ -3526,7 +3527,7 @@ int MTTKRP_MIHCSR_GPU_oneMode_forCPD(TiledTensor *TiledX, Matrix *U, const Optio
 	for (int m = 0; m < TiledX[0].ndims; ++m)
 		szDU[m] = U[m].nRows * U[m].nCols;
 
-	int loc = 0;
+	ITYPE loc = 0;
 	for (int m = 0; m < cpdMode; ++m)
 		loc += szDU[m];
 
@@ -3680,23 +3681,23 @@ int MTTKRP_MIHCSR_GPU_oneMode_forCPD(TiledTensor *TiledX, Matrix *U, const Optio
 		// cout << "MI-HCSR-GPU-mode "<< MTTKRPmode <<" : " << GPUTime << "," << endl;
 		allModeGPUTime += GPUTime; 
 	}
-	// int loc = 0;
+	// ITYPE loc = 0;
 	// for (int m = 0; m < cpdMode; ++m)
 	// 	loc += szDU[m];
-	// int loc =  szDU[0];
+	// ITYPE loc =  szDU[0];
 
 	/* Copying output matrix from GPU to CPU for correctness check */
 	checkCuda(cudaMemcpy(&U[cpdMode].vals[0], dU + loc, U[cpdMode].nRows * U[cpdMode].nCols * sizeof(DTYPE), cudaMemcpyDeviceToHost), 0);
 
 	if(iter == Opt.cpdIters - 1 && cpdMode == TiledX[0].ndims - 1)
 	{
-		cout << "Freeing variable " << endl;
 		cudaFree(dVals); 
 		cudaFree(dU); //cudaFree(dU1); cudaFree(dU2); cudaFree(dU3);
 		cudaFree(dfbrIdx0); cudaFree(dInds2); cudaFree(dInds3); 
 		cudaFree(dfbrIdx0); cudaFree(dfbrIdx1); cudaFree(dFbrIdx2);
 		cudaFree(dfbrPtr0); cudaFree(dfbrPtr1); cudaFree(dFbrPtr2);
 		cudaFree(dFbrLikeSlcInds);
+
 	}
 
 	return 0;
@@ -4086,7 +4087,7 @@ int MTTKRP_MIHCSR_multiGPU(TiledTensor *MMCSF, Matrix *U, const Options &Opt, co
 
     /* Copying output matrix from GPU to CPU*/
     int MTTKRPmode = MMCSF[0].ndims - 1;
-    int loc =  ((MMCSF[0].ndims == 3) ? szDU[0] + szDU[1] : szDU[0] + szDU[1] + szDU[2]);
+    ITYPE loc =  ((MMCSF[0].ndims == 3) ? szDU[0] + szDU[1] : szDU[0] + szDU[1] + szDU[2]);
     DTYPE *tmpDU = new DTYPE[ U[MTTKRPmode].nRows * U[MTTKRPmode].nCols];
     checkCuda(cudaMemcpy(tmpDU, dU + loc, U[MTTKRPmode].nRows * U[MTTKRPmode].nCols * sizeof(DTYPE), cudaMemcpyDeviceToHost), 0);
 
@@ -4479,7 +4480,7 @@ int MTTKRP_MIHCSR_multiGPU_parMM(TiledTensor *TiledX, Matrix *U, const Options &
 
     /* Copying output matrix from GPU to CPU*/
     int MTTKRPmode = TiledX[0].ndims - 1;
-    int loc =  ((TiledX[0].ndims == 3) ? szDU[0] + szDU[1] : szDU[0] + szDU[1] + szDU[2]);
+    ITYPE loc =  ((TiledX[0].ndims == 3) ? szDU[0] + szDU[1] : szDU[0] + szDU[1] + szDU[2]);
     DTYPE *tmpDU = new DTYPE[ U[MTTKRPmode].nRows * U[MTTKRPmode].nCols];
     checkCuda(cudaMemcpy(tmpDU, dU + loc, U[MTTKRPmode].nRows * U[MTTKRPmode].nCols * sizeof(DTYPE), cudaMemcpyDeviceToHost), 0);
 
@@ -4494,7 +4495,6 @@ int MTTKRP_MIHCSR_multiGPU_parMM(TiledTensor *TiledX, Matrix *U, const Options &
     cudaFree(dfbrIdx0); cudaFree(dfbrIdx1); cudaFree(dFbrIdx2);
     cudaFree(dfbrPtr0); cudaFree(dfbrPtr1); cudaFree(dFbrPtr2);
     cudaFree(dFbrLikeSlcInds);
-
     return 0;
 }
 

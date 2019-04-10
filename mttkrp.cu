@@ -280,7 +280,7 @@ int main(int argc, char* argv[]){
         
         t0 = seconds();
         double start_time = omp_get_wtime();
-        omp_set_num_threads(X.ndims);
+        // omp_set_num_threads(X.ndims);
         // #pragma omp parallel 
         {
             // int threadnum = omp_get_thread_num(), numthreads = omp_get_num_threads();
