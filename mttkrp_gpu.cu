@@ -2232,7 +2232,7 @@ int MTTKRP_B_HCSR_GPU_ANYMODE(TiledTensor *TiledX, Matrix *U, const Options &Opt
 	for (int m = 0; m < TiledX[0].ndims; ++m)
 		szDU[m] = U[m].nRows * U[m].nCols;
 
-	int mtxLoc = 0;
+	ITYPE mtxLoc = 0;
 	for (int m = 0; m < mode; ++m)
 		mtxLoc += szDU[m];
 
