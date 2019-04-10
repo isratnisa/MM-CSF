@@ -101,13 +101,7 @@ int main(int argc, char* argv[]){
 
         int tilingMode = X.modeOrder[X.ndims -1];
 
-        // make tile fit in shared
-        if(Opt.impType == 9){
-            Opt.tileSize = 192;
-            Opt.nTile = (X.dims[tilingMode] + Opt.tileSize - 1)/Opt.tileSize;
-        }
-        else 
-            Opt.tileSize = (X.dims[tilingMode] + Opt.nTile - 1)/Opt.nTile;  
+        Opt.tileSize = (X.dims[tilingMode] + Opt.nTile - 1)/Opt.nTile;  
         
         if(Opt.nTile > X.dims[tilingMode]){
             cout << "Number of tiles ("<< Opt.nTile << ") should be as minimum as K's dimension (" << X.dims[tilingMode]  << "). Exiting."<< endl ;
@@ -162,9 +156,14 @@ int main(int argc, char* argv[]){
         }
 
 
-        // TILED + shared HCSR GPU
+        // TILED + support all mode using same B-CSF
         else if(Opt.impType == 9){
-            MTTKRP_B_HCSR_GPU(TiledX, U, Opt);
+            // int MTTKRPmode = 0;
+            for (int MTTKRPmode = 0; MTTKRPmode < X.ndims; ++MTTKRPmode){
+                randomize_mats(X, U, Opt);
+                zero_mat(X, U, MTTKRPmode);  
+                MTTKRP_B_HCSR_GPU_ANYMODE(TiledX, U, Opt, MTTKRPmode);
+            }
         }
     }
 
@@ -350,6 +349,7 @@ int main(int argc, char* argv[]){
                 end_mpi();
             }
             else
+
                 MTTKRP_MIHCSR_GPU(ModeWiseTiledX, U, Opt);
 
         }
@@ -375,7 +375,8 @@ int main(int argc, char* argv[]){
         if(Opt.verbose && (Opt.impType == 12 || Opt.impType == 14))
             cout << "checking only the last mode. " << endl;
         // Opt.mode = 0;//X.modeOrder[2];
-        Opt.mode = ((Opt.impType == 12 || Opt.impType == 14 ) ? X.ndims-1 : Opt.mode);
+        // int MTTKRPmode = 2;
+        Opt.mode = ((Opt.impType == 12 || Opt.impType == 14 ) ?  X.ndims-1 : Opt.mode);
         int mode = Opt.mode;
         int nr = U[mode].nRows;  
         int nc = U[mode].nCols;

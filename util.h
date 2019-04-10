@@ -156,7 +156,7 @@ public:
     std::string m2 = "201";
     bool useMPI = false;
     bool doCPD = false;
-    ITYPE cpdIters = 5;
+    ITYPE cpdIters = 10;
     bool natOrdering = false;
     ITYPE fbrThreashold = 99999999;
 
@@ -3145,10 +3145,10 @@ inline int randomize_mats(const Tensor &X, Matrix *U, const Options &Opt){
         for(long r = 0; r < U[mode].nRows; ++r){
             for(long c = 0; c < U[mode].nCols; ++c){ // or u[mode].nCols 
                 
-                if(Opt.doCPD)
+                // if(Opt.doCPD)
                    U[mode].vals[r * U[mode].nCols + c] = RandomValue(); //mode + .5;//1.5 * (mode+1);;// .1 * drand48(); //1 ;//; //
-                else
-                   U[mode].vals[r * U[mode].nCols + c] = mode + .5;//1.5
+                // else
+                //    U[mode].vals[r * U[mode].nCols + c] = mode + .5;//1.5
             }
         }
     }

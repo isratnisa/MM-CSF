@@ -1529,7 +1529,7 @@ int MTTKRP_B_HCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt){
 	
 	/*choosing kernel type:
 	false: B-CSF- IPDPS work, true: parallelism at fiber level, call slc_atomic_fbrlblpar function*/
-	bool slcAtomicFbrLvlPar =  true;
+	bool slcAtomicFbrLvlPar =  false;
 
 	/* Allocate and memcpy GPU memory */
 	//Tensor
@@ -2127,6 +2127,390 @@ int MTTKRP_HYB_GPU(const HYBTensor &HybX, Matrix *U, const Options &Opt){
     cudaFree(dfbrPtr0); cudaFree(dfbrPtr1); cudaFree(dFbrPtr2);
 	cudaFree(dCSLInds1); cudaFree(dCSLInds2); cudaFree(dCSLSlcPtr); cudaFree(dCSLSlcInds);
 	cudaFree(dCOOInds0); cudaFree(dCOOInds1); cudaFree(dCOOInds2); 
+
+	return 0;
+}
+
+int MTTKRP_B_HCSR_GPU_ANYMODE(TiledTensor *TiledX, Matrix *U, const Options &Opt, int mode){
+	
+	/*choosing kernel type:*/
+
+	if(TiledX[0].ndims >3){
+		cout << " need more kernel and change the device mat loc..du0..du1" << endl;
+		return 0;
+	}
+
+	/* Allocate and memcpy GPU memory */
+	//Tensor
+	ITYPE *dInds2, *dInds3, *dfbrPtr0, *dfbrIdx0, *dfbrPtr1, *dfbrIdx1, *dFbrPtr2, *dFbrIdx2, *dSlcMapperBin, *dFbrLikeSlcInds;
+	DTYPE *dVals;
+	ITYPE dLoc = 0, dSlcLoc = 0, dSlcIdxLoc = 0, dFbrLoc =0,  dFbrIdxLoc =0, dBinLoc = 0, dFbrLoc2 =0;
+	ITYPE totNnz = 0, totSlcPtr = 0, totSlcIdx = 0, totFbrPtr = 0, totFbrIdx = 0, totFbrPtr2 = 0;
+
+	// // All tile same mode
+	ITYPE mode0 = 0;//TiledX[0].modeOrder[0];
+    ITYPE mode1 = 1;//TiledX[0].modeOrder[1];
+    ITYPE mode2 = 2;//TiledX[0].modeOrder[2];
+    ITYPE mode3 = 3;//((TiledX[0].ndims == 4) ? TiledX[0].modeOrder[3] : 0) ;
+
+	for (int tile = 0; tile < Opt.nTile; ++tile){
+		totNnz += TiledX[tile].totNnz;
+		totSlcPtr += TiledX[tile].fbrPtr[0].size() ;
+		totSlcIdx += TiledX[tile].fbrIdx[0].size() ;
+		totFbrPtr += TiledX[tile].fbrPtr[1].size() ;
+		totFbrIdx += TiledX[tile].fbrIdx[1].size() ;
+		totFbrPtr2 += ((TiledX[tile].ndims == 4) ? TiledX[tile].fbrPtr[2].size() : 0) ;
+	}
+
+	double t0 = seconds();
+	checkCuda(cudaMalloc((void**) &dVals, totNnz * sizeof(DTYPE)), 0);
+	checkCuda(cudaMalloc((void**) &dfbrPtr0, totSlcPtr * sizeof(ITYPE)), 0);
+	checkCuda(cudaMalloc((void**) &dfbrIdx0, totSlcIdx * sizeof(ITYPE)), 0);
+	checkCuda(cudaMalloc((void**) &dSlcMapperBin, totSlcPtr * sizeof(ITYPE)), 0);
+	checkCuda(cudaMalloc((void**) &dfbrPtr1, totFbrPtr * sizeof(ITYPE)), 0);
+	checkCuda(cudaMalloc((void**) &dfbrIdx1, totFbrIdx * sizeof(ITYPE)), 0);
+
+	if(TiledX[0].ndims == 3)
+		checkCuda(cudaMalloc((void**) &dInds2, totNnz * sizeof(ITYPE)), 0);
+
+	if(TiledX[0].ndims == 4){
+		checkCuda(cudaMalloc((void**) &dFbrIdx2, totFbrPtr2 * sizeof(ITYPE)), 0);
+		checkCuda(cudaMalloc((void**) &dFbrPtr2, totFbrPtr2 * sizeof(ITYPE)), 0);
+		checkCuda(cudaMalloc((void**) &dInds3, totNnz * sizeof(ITYPE)), 0);
+	}
+
+	/* cuda memcopy for tiled parts*/
+	for (int tile = 0; tile < Opt.nTile; ++tile){	
+		if(tile > 0) {
+			dLoc += TiledX[tile-1].totNnz;
+			dSlcLoc += TiledX[tile - 1].fbrPtr[0].size(); // all tile same
+			dSlcIdxLoc += TiledX[tile - 1].fbrIdx[0].size(); 
+			dFbrLoc += TiledX[tile - 1].fbrPtr[1].size();
+			dFbrIdxLoc += TiledX[tile - 1].fbrIdx[1].size();
+			dFbrLoc2 += ((TiledX[tile].ndims == 4) ? TiledX[tile - 1].fbrPtr[2].size() : 0) ;
+		}
+
+		checkCuda(cudaMemcpy(dVals + dLoc, &(TiledX[tile].vals[0]), TiledX[tile].totNnz * sizeof(DTYPE),cudaMemcpyHostToDevice), 0);
+		checkCuda(cudaMemcpy(dfbrPtr0 + dSlcLoc, &(TiledX[tile].fbrPtr[0][0]), TiledX[tile].fbrPtr[0].size() * sizeof(ITYPE),cudaMemcpyHostToDevice), 0);
+		checkCuda(cudaMemcpy(dfbrIdx0 + dSlcIdxLoc, &(TiledX[tile].fbrIdx[0][0]), TiledX[tile].fbrIdx[0].size() * sizeof(ITYPE),cudaMemcpyHostToDevice), 0);
+		checkCuda(cudaMemcpy(dfbrPtr1 + dFbrLoc, &(TiledX[tile].fbrPtr[1][0]), TiledX[tile].fbrPtr[1].size() * sizeof(ITYPE),cudaMemcpyHostToDevice), 0);
+		checkCuda(cudaMemcpy(dfbrIdx1 + dFbrIdxLoc, &(TiledX[tile].fbrIdx[1][0]), TiledX[tile].fbrIdx[1].size() * sizeof(ITYPE),cudaMemcpyHostToDevice), 0);
+		
+		if(TiledX[tile].ndims == 3)
+			checkCuda(cudaMemcpy(dInds2 + dLoc, &(TiledX[tile].inds[TiledX[tile].modeOrder[2]][0]), TiledX[tile].totNnz * sizeof(ITYPE),cudaMemcpyHostToDevice), 0);			
+
+		if(TiledX[tile].ndims == 4){			
+			checkCuda(cudaMemcpy(dFbrPtr2 + dFbrLoc2, &(TiledX[tile].fbrPtr[2][0]), TiledX[tile].fbrPtr[2].size() * sizeof(ITYPE),cudaMemcpyHostToDevice), 0);
+			checkCuda(cudaMemcpy(dFbrIdx2 + dFbrLoc2, &(TiledX[tile].fbrIdx[2][0]), TiledX[tile].fbrIdx[2].size() * sizeof(ITYPE),cudaMemcpyHostToDevice), 0);
+			checkCuda(cudaMemcpy(dInds3 + dLoc, &(TiledX[tile].inds[mode3][0]), TiledX[tile].totNnz * sizeof(ITYPE),cudaMemcpyHostToDevice), 0);
+		}
+
+		dBinLoc = 0;
+		for (int bin = 0; bin < Opt.nBin; ++bin){
+
+			if(bin > 0)
+				dBinLoc += TiledX[tile].slcMapperBin[bin-1].size();
+
+		    checkCuda(cudaMemcpy(dSlcMapperBin + dSlcIdxLoc + dBinLoc, &(TiledX[tile].slcMapperBin[bin][0]), TiledX[tile].slcMapperBin[bin].size() * sizeof(ITYPE),cudaMemcpyHostToDevice), 0);
+		}
+	}
+	float tnsMemcpyTime = seconds() - t0;
+
+	t0 = seconds();
+
+    unsigned int *dULoc =  new unsigned int[TiledX[0].ndims];
+    unsigned int *szDU =  new unsigned int[TiledX[0].ndims];
+	
+	// //Matrices
+	DTYPE *dU;// *dU0, *dU1, *dU2, *dU3;	
+
+	ITYPE mtxSize = ((TiledX[0].ndims == 3) ? (U[mode0].nRows + U[mode1].nRows + U[mode2].nRows) * U[mode0].nCols
+		: (U[mode0].nRows + U[mode1].nRows + U[mode2].nRows + U[mode3].nRows) * U[mode0].nCols );
+	
+	checkCuda(cudaMalloc((void**) &dU, mtxSize * sizeof(DTYPE)), 0);
+
+	for (int m = 0; m < TiledX[0].ndims; ++m)
+		szDU[m] = U[m].nRows * U[m].nCols;
+
+	int mtxLoc = 0;
+	for (int m = 0; m < mode; ++m)
+		mtxLoc += szDU[m];
+
+	checkCuda(cudaMemcpy(dU + 0, &(U[mode0].vals[0]), U[mode0].nRows * U[mode0].nCols * sizeof(DTYPE), cudaMemcpyHostToDevice), 0);
+	checkCuda(cudaMemcpy(dU + szDU[0], &(U[mode1].vals[0]), U[mode1].nRows * U[mode1].nCols * sizeof(DTYPE), cudaMemcpyHostToDevice), 0);
+	checkCuda(cudaMemcpy(dU + szDU[0] + szDU[1], &(U[mode2].vals[0]), U[mode2].nRows * U[mode2].nCols * sizeof(DTYPE), cudaMemcpyHostToDevice), 0);
+
+	cudaMemset(dU + mtxLoc, 0,  U[mode].nRows * U[mode0].nCols * sizeof(DTYPE));
+
+	// // //Matrices
+	// DTYPE *dU0, *dU1, *dU2, *dU3;	
+	// checkCuda(cudaMalloc((void**) &dU0, U[mode0].nRows * U[mode0].nCols * sizeof(DTYPE)), 0);
+	// checkCuda(cudaMalloc((void**) &dU1, U[mode1].nRows * U[mode1].nCols * sizeof(DTYPE)), 0);
+	// checkCuda(cudaMalloc((void**) &dU2, U[mode2].nRows * U[mode2].nCols * sizeof(DTYPE)), 0);
+
+	// cudaMemset(dU, 0,  U[mode0].nRows * U[mode0].nCols * sizeof(DTYPE));
+	// checkCuda(cudaMemcpy(dU1, &(U[mode1].vals[0]), U[mode1].nRows * U[mode1].nCols * sizeof(DTYPE), cudaMemcpyHostToDevice), 0);
+	// checkCuda(cudaMemcpy(dU2, &(U[mode2].vals[0]), U[mode2].nRows * U[mode2].nCols * sizeof(DTYPE), cudaMemcpyHostToDevice), 0);
+
+	// float mtxMemcpyTime = seconds() - t0;
+
+	// // cout << "tns and mtx memcopy time: " << tnsMemcpyTime <<", " << mtxMemcpyTime<< endl;
+	
+	// if(TiledX[0].ndims == 4){
+	// 	checkCuda(cudaMalloc((void**) &dU3, U[mode3].nRows * U[mode3].nCols * sizeof(DTYPE)), 0);
+	// 	checkCuda(cudaMemcpy(dU3, &(U[mode3].vals[0]), U[mode3].nRows * U[mode3].nCols * sizeof(DTYPE), cudaMemcpyHostToDevice), 0);
+	// }
+
+	// BLOCK and GRID
+	int BLOCKSIZE = 512;
+	unsigned int rowInATB = BLOCKSIZE / (Opt.warpPerSlice*32); 
+
+	if(Opt.warpPerSlice * 32 > BLOCKSIZE){
+		cout << "BLOCKSIZE is smaller than work per slice! Increase BLOCKSIZE." << endl;
+		exit(0);
+	}
+
+    cudaEvent_t start, stop;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
+    cudaStream_t streams[Opt.nBin];
+    float mili = 0, GPUTime = 0, CPUtimer = 0, allModeGPUTime = 0;
+
+    int smallBinEndsAt = 5;
+
+    /* Warp per slice and threadblock per size */
+    int *warpPerSlc = new int[Opt.nBin];
+    int *logOfWarpPerSlc = new int[Opt.nBin];
+    int *TbPerSlc = new int[Opt.nBin];
+    int *logOfTbPerSlc = new int[Opt.nBin];
+
+    for (int bin = 0; bin < Opt.nBin ; ++bin){
+    	
+    	TbPerSlc[bin] = 1;
+		warpPerSlc[bin] = ((bin > 0) ? 2 << (bin - 1) : 1);
+		
+		if(warpPerSlc[bin] > 16)		
+			warpPerSlc[bin] = 16;
+
+		logOfWarpPerSlc[bin] = log2(warpPerSlc[bin]);
+
+		TbPerSlc[bin] = 1;
+		logOfTbPerSlc[bin] = 0;
+		
+		if (bin >= smallBinEndsAt){
+		
+			TbPerSlc[bin] = 1 << (bin - smallBinEndsAt + 1); // 1st big bin starts with 1 TB 1 << 1 not 1 << 5
+			if(TbPerSlc[bin] > 32) TbPerSlc[bin] = 32;		
+			logOfTbPerSlc[bin] = log2(TbPerSlc[bin]);
+
+			warpPerSlc[bin] = 16;
+			logOfWarpPerSlc[bin] = 4;
+		}
+    }
+
+    // TBD: change warpPerSlc to warpPerSlc[bin] and all
+	int slcPerTb = 1;
+
+	dLoc = 0, dSlcLoc = 0, dSlcIdxLoc = 0; dFbrLoc =0, dFbrIdxLoc = 0, dFbrLoc2= 0;
+
+	for (int bin = 0; bin < Opt.nBin; ++bin)
+		cudaStreamCreate(&streams[bin]);
+
+	/*MTTKRP on Opt.mode*/
+	int MTTKRPmode = mode;//Opt.mode;
+	
+	for (int tile = 0; tile < Opt.nTile; ++tile){
+
+		/* matrix order according to mode order*/ 
+		for (int mm = 0; mm < TiledX[0].ndims; ++mm){
+			
+			int curMode = TiledX[tile].modeOrder[mm];
+			dULoc[mm] = 0;
+			
+			for (int q = 0; q < curMode; ++q)
+				dULoc[mm] +=  szDU[q % TiledX[0].ndims]; //1 2 3 0
+		}
+
+		dBinLoc = 0;
+		
+		if(tile > 0) {
+			dLoc += TiledX[tile-1].totNnz;
+			dSlcLoc += TiledX[tile - 1].fbrPtr[0].size(); 
+			dSlcIdxLoc += TiledX[tile - 1].fbrIdx[0].size(); 
+			dFbrLoc += TiledX[tile - 1].fbrPtr[1].size();
+			dFbrIdxLoc += TiledX[tile - 1].fbrIdx[1].size();
+			dFbrLoc2 += ((TiledX[0].ndims == 4) ? TiledX[tile - 1].fbrPtr[2].size() : 0) ;
+		}
+
+		// BLOCKSIZE = (( slcAtomicFbrLvlPar == true) ? Opt.TBsize : 512) ;
+		dim3 block(BLOCKSIZE, 1, 1), grid(1, 1, 1);
+
+		int smallBinEndsAt = 5;
+		int slcPerTb = 0;
+
+		// int warpPerFbr = BLOCKSIZE/32;//1;//Opt.warpPerSlice;//4;//;
+		// int logOfWarpPerFbr = log2(warpPerFbr);
+		// int bin = 0;
+		// int fbrPerWarp = 1;//BLOCKSIZE/32; // dont overflow TB
+		// int logOfFbrPerWarp = log2(fbrPerWarp);
+
+		int warpPerFbr =Opt.warpPerSlice;//4;//; BLOCKSIZE/32;//1;//
+		int logOfWarpPerFbr = log2(warpPerFbr);
+		int fbrPerWarp = Opt.fiberPerWarp;//1;//BLOCKSIZE/32; // dont overflow TB
+		int logOfFbrPerWarp = log2(fbrPerWarp );	
+
+		double t0 = seconds();
+		cuda_timer_start(start);
+		
+		if(mode == TiledX[0].modeOrder[0]){
+
+			for (int bin = 0; bin < Opt.nBin ; ++bin){
+
+				if(bin < smallBinEndsAt){
+					
+					ITYPE shSize = 0;//slcPerTb * 32 * sizeof(DTYPE); slcPerTb = 16 / warpPerSlc[bin];
+
+					dBinLoc += ((bin > 0) ? TiledX[tile].slcMapperBin[bin-1].size() : 0);
+
+					grid.x = ( TbPerSlc[bin] * warpPerSlc[bin] * 32 * TiledX[tile].slcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
+
+					if(TiledX[0].ndims == 3)
+						mttkrp_HCSR_kernel_smllBin<<<grid, block, shSize , streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
+						dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[tile].slcMapperBin[bin].size(), 
+						dU + dULoc[0], dU + dULoc[1], dU + dULoc[2], Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin], TbPerSlc[bin], logOfTbPerSlc[bin]); 
+					// else
+					// 	mttkrp_HCSR_kernel_smllBin_4D<<<grid, block, shSize , streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
+					// 	dInds3 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc, dfbrIdx1 + dFbrIdxLoc, dFbrPtr2 + dFbrLoc2, dFbrIdx2 + dFbrLoc2, TiledX[tile].slcMapperBin[bin].size(), 
+					// 	dU0, dU1, dU2, dU3, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin], TbPerSlc[bin], logOfTbPerSlc[bin]); 
+				}
+				
+				// Processing heavy bin.. multiple TB per slice
+				else{
+
+					dBinLoc += TiledX[tile].slcMapperBin[bin-1].size();
+							
+					grid.x = (TbPerSlc[bin] * warpPerSlc[bin] * 32 * TiledX[tile].slcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
+					
+					if(TiledX[0].ndims == 3)
+						mttkrp_HCSR_kernel_hvyBin<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
+						dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[tile].slcMapperBin[bin].size(), 
+						dU + dULoc[0], dU + dULoc[1], dU + dULoc[2], Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin],  TbPerSlc[bin], logOfTbPerSlc[bin]); 
+					// else
+					// 	mttkrp_HCSR_kernel_hvyBin_4D<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
+					// 	dInds3 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc, dfbrIdx1 + dFbrIdxLoc, dFbrPtr2 + dFbrLoc2, dFbrIdx2 + dFbrLoc2, TiledX[tile].slcMapperBin[bin].size(), 
+					// 	dU0, dU1, dU2, dU3, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin],  TbPerSlc[bin], logOfTbPerSlc[bin]); 
+				}
+			}
+		}
+		
+		else if(mode == TiledX[0].modeOrder[1]){
+			
+			for (int bin = 0; bin < Opt.nBin ; ++bin){
+
+				if(bin < smallBinEndsAt){
+					
+					ITYPE shSize = 0;//slcPerTb * 32 * sizeof(DTYPE); slcPerTb = 16 / warpPerSlc[bin];
+
+					dBinLoc += ((bin > 0) ? TiledX[tile].slcMapperBin[bin-1].size() : 0);
+
+					grid.x = ( TbPerSlc[bin] * warpPerSlc[bin] * 32 * TiledX[tile].slcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
+
+					if(TiledX[0].ndims == 3)
+						mttkrp_MIHCSR_kernel_smllBin_fbr_atomic<<<grid, block, shSize , streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
+						dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[tile].slcMapperBin[bin].size(), 
+						dU + dULoc[1], dU + dULoc[2], dU + dULoc[0], Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin], TbPerSlc[bin], logOfTbPerSlc[bin]); 
+					// else
+					// 	mttkrp_HCSR_kernel_smllBin_4D<<<grid, block, shSize , streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
+					// 	dInds3 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc, dfbrIdx1 + dFbrIdxLoc, dFbrPtr2 + dFbrLoc2, dFbrIdx2 + dFbrLoc2, TiledX[tile].slcMapperBin[bin].size(), 
+					// 	dU1, dU2, dU3, dU0, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin], TbPerSlc[bin], logOfTbPerSlc[bin]); 
+				}
+				
+				// Processing heavy bin.. multiple TB per slice
+				else{
+
+					dBinLoc += TiledX[tile].slcMapperBin[bin-1].size();
+							
+					grid.x = (TbPerSlc[bin] * warpPerSlc[bin] * 32 * TiledX[tile].slcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
+					
+					if(TiledX[0].ndims == 3)
+						mttkrp_MIHCSR_kernel_hvyBin_fbr_atomic<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
+						dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[tile].slcMapperBin[bin].size(), 
+						dU + dULoc[1], dU + dULoc[2], dU + dULoc[0], Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin],  TbPerSlc[bin], logOfTbPerSlc[bin]); 
+					// else
+					// 	mttkrp_HCSR_kernel_hvyBin_4D<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
+					// 	dInds3 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc, dfbrIdx1 + dFbrIdxLoc, dFbrPtr2 + dFbrLoc2, dFbrIdx2 + dFbrLoc2, TiledX[tile].slcMapperBin[bin].size(), 
+					// 	dU1, dU2, dU3, dU0, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin],  TbPerSlc[bin], logOfTbPerSlc[bin]); 
+				}
+			}
+		}
+		else if(mode == TiledX[0].modeOrder[2]){
+			
+			for (int bin = 0; bin < Opt.nBin ; ++bin){
+
+				if(bin < smallBinEndsAt){
+					
+					ITYPE shSize = 0;//slcPerTb * 32 * sizeof(DTYPE); slcPerTb = 16 / warpPerSlc[bin];
+
+					dBinLoc += ((bin > 0) ? TiledX[tile].slcMapperBin[bin-1].size() : 0);
+
+					grid.x = ( TbPerSlc[bin] * warpPerSlc[bin] * 32 * TiledX[tile].slcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
+
+					if(TiledX[0].ndims == 3)
+						mttkrp_MIHCSR_kernel_smllBin_all_atomic <<<grid, block, shSize , streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
+						dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[tile].slcMapperBin[bin].size(), 
+						dU + dULoc[2], dU + dULoc[0], dU + dULoc[1], Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin], TbPerSlc[bin], logOfTbPerSlc[bin]); 
+					// else
+					// 	mttkrp_HCSR_kernel_smllBin_4D<<<grid, block, shSize , streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
+					// 	dInds3 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc, dfbrIdx1 + dFbrIdxLoc, dFbrPtr2 + dFbrLoc2, dFbrIdx2 + dFbrLoc2, TiledX[tile].slcMapperBin[bin].size(), 
+					// 	dU2, dU0, dU1, dU3, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin], TbPerSlc[bin], logOfTbPerSlc[bin]); 
+				}
+				
+				// Processing heavy bin.. multiple TB per slice
+				else{
+
+					dBinLoc += TiledX[tile].slcMapperBin[bin-1].size();
+							
+					grid.x = (TbPerSlc[bin] * warpPerSlc[bin] * 32 * TiledX[tile].slcMapperBin[bin].size() + BLOCKSIZE - 1) / BLOCKSIZE;
+					
+					if(TiledX[0].ndims == 3)
+						mttkrp_MIHCSR_kernel_hvyBin_all_atomic<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
+						dInds2 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc,  dfbrIdx1 + dFbrLoc, TiledX[tile].slcMapperBin[bin].size(), 
+						dU + dULoc[2], dU + dULoc[0], dU + dULoc[1], Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin],  TbPerSlc[bin], logOfTbPerSlc[bin]); 
+					// else
+					// 	mttkrp_HCSR_kernel_hvyBin_4D<<<grid, block, 0, streams[bin]>>>(dVals + dLoc, dfbrIdx0 + dSlcIdxLoc, dSlcMapperBin + dSlcIdxLoc + dBinLoc, 
+					// 	dInds3 + dLoc, dfbrPtr0 + dSlcLoc, dfbrPtr1 + dFbrLoc, dfbrIdx1 + dFbrIdxLoc, dFbrPtr2 + dFbrLoc2, dFbrIdx2 + dFbrLoc2, TiledX[tile].slcMapperBin[bin].size(), 
+					// 	dU0, dU1, dU2, dU3, Opt.mode, Opt.R, warpPerSlc[bin], logOfWarpPerSlc[bin],  TbPerSlc[bin], logOfTbPerSlc[bin]); 
+				}
+			}
+		}
+
+		cuda_timer_stop(start, stop, mili);
+	    CPUtimer += seconds() - t0;
+	    GPUTime += mili;
+
+	    if(Opt.verbose){
+	    	cout << "Tile: " << tile << " - time: " << mili << "ms";
+	    	cout <<" nnz: " << TiledX[tile].totNnz << " nFibers: "
+	    	<< TiledX[tile].fbrPtr[1].size() << " nSlc " << TiledX[tile].fbrIdx[0].size() << " ";
+			cout << endl;
+		} 
+		
+	}
+	allModeGPUTime += GPUTime;
+	cout << "B-CSF-GPU-mode " << MTTKRPmode <<" :" << GPUTime << "," << endl;
+
+	for (int bin = 0; bin < Opt.nBin; ++bin)
+		cudaStreamDestroy(streams[bin]);
+
+	// check correctness
+	checkCuda(cudaMemcpy(&U[mode].vals[0], dU + mtxLoc, U[mode].nRows * U[mode].nCols * sizeof(DTYPE), cudaMemcpyDeviceToHost), 0);
+
+	cudaFree(dVals); 
+	cudaFree(dU); //cudaFree(dU1); cudaFree(dU2); cudaFree(dU3);
+	cudaFree(dfbrIdx0); cudaFree(dInds2); cudaFree(dInds3); 
+	cudaFree(dfbrIdx0); cudaFree(dfbrIdx1); cudaFree(dFbrIdx2);
+	cudaFree(dfbrPtr0); cudaFree(dfbrPtr1); cudaFree(dFbrPtr2);
+	cudaFree(dFbrLikeSlcInds);
 
 	return 0;
 }

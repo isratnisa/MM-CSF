@@ -11,6 +11,8 @@ int MTTKRP_TILED_COO_GPU(TiledTensor *TiledX, Matrix *U, const Options Opt);
 
 int MTTKRP_B_HCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt);
 
+int MTTKRP_B_HCSR_GPU_ANYMODE(TiledTensor *TiledX, Matrix *U, const Options &Opt, int mode);
+
 int MTTKRP_ONE_HCSR_GPU(TiledTensor *TiledX, Matrix *U, const Options &Opt);
 
 int MTTKRP_HYB_GPU(const HYBTensor &HybX, Matrix *U, const Options &Opt);
