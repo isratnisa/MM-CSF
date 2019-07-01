@@ -21,7 +21,9 @@ int main(int argc, char* argv[]){
     
     Tensor X;
     load_tensor(X, Opt);
+    double t1=seconds();;
     sort_COOtensor(X);
+    // printf("Sort : %.3f sec \n", seconds() - t1); 
     check_opt(X, Opt); //check options are good
     MPI_param MPIparam;
     
@@ -113,17 +115,19 @@ int main(int argc, char* argv[]){
         
         // create HCSR for each tile
         for (int tile = 0; tile < Opt.nTile; ++tile){
-
-            if(TiledX[tile].totNnz > 0){
+            double t0 = seconds();
+            if(TiledX[tile].totNnz > 0)
                 create_TiledHCSR(TiledX, Opt, tile);
-            }
+            printf("CREATE CSF : %.3f sec \n", seconds() - t0); 
             // print_TiledHCSRtensor(TiledX, tile);
         }  
 
         // Split tiles into bins accordin to nnz in slice
         for (int tile = 0; tile < Opt.nTile; ++tile){
+             double t0 = seconds();
             if(TiledX[tile].totNnz > 0)
                 make_TiledBin(TiledX, Opt, tile);
+            printf("Binning time : %.3f sec \n", seconds() - t0); 
         }
 
         // COO GPU  
@@ -148,8 +152,14 @@ int main(int argc, char* argv[]){
 
         // TILED HCSR GPU
         else if(Opt.impType == 8){
+
+            // cout <<" Delete this function" << endl;
+            // double t0 = seconds();
+            // create_pointers(TiledX, Opt, 0);
+            // printf("POINTERS: %.3f sec \n", seconds() - t0); 
             
-            cout << "Sorted mode: " << X.modeOrder[0] << " " << X.modeOrder[1] << " " <<X.modeOrder[2] << endl;
+            // cout <<" Uncomment the follwoing" << endl;
+            // // cout << "Sorted mode: " << X.modeOrder[0] << " " << X.modeOrder[1] << " " <<X.modeOrder[2] << endl;
             create_fbrLikeSlcInds(TiledX, 0);
             create_fbrLikeSlcInds(X, Opt);
             MTTKRP_B_HCSR_GPU(TiledX, U, Opt);
@@ -247,6 +257,7 @@ int main(int argc, char* argv[]){
 
         /*Collect slice and fiber stats: Create CSF for all modes*/
         bool slcNfbrStats = true;
+        int redunMode;
 
         Tensor *arrX = new Tensor[X.ndims]; 
 
@@ -255,13 +266,41 @@ int main(int argc, char* argv[]){
             for (int m = 0; m < X.ndims; ++m){
             
                 init_tensor(arrX, X, Opt, m);
-                if(m!= Opt.mode) //already sorted
-                    t0 = seconds();
+
+                /*crappy coding::*/
+
+                if(m == 1){
+                    if (arrX[m].modeOrder[1] == arrX[m-1].modeOrder[0] && arrX[m].modeOrder[0] == arrX[m-1].modeOrder[1]){
+                        // sameFm0m1 = true;
+                        redunMode = m;
+                    }
+                }
+                else if(m == 2){
+                    if ((arrX[m].modeOrder[1] == arrX[m-2].modeOrder[0] && arrX[m].modeOrder[0] == arrX[m-2].modeOrder[1]) || 
+                        (arrX[m].modeOrder[1] == arrX[m-1].modeOrder[0] && arrX[m].modeOrder[0] == arrX[m-1].modeOrder[1])){
+                        // sameFm0m2 = true;
+                        redunMode = m;
+                    }
+                }
+
+                else if(m == 3){
+                    if ((arrX[m].modeOrder[1] == arrX[m-3].modeOrder[0] && arrX[m].modeOrder[0] == arrX[m-3].modeOrder[1]) ||
+                      (arrX[m].modeOrder[1] == arrX[m-2].modeOrder[0] && arrX[m].modeOrder[0] == arrX[m-2].modeOrder[1]) ||
+                      (arrX[m].modeOrder[1] == arrX[m-1].modeOrder[0] && arrX[m].modeOrder[0] == arrX[m-1].modeOrder[1])){
+
+                        redunMode = m;
+
+                    }
+                }
+            
+                // t0 = seconds();
+                if(m !=  redunMode)
                     sort_COOtensor(arrX[m]);
-                    // printf("sort - mode %d - %.3f\n", m, seconds() - t0);
+                // printf("sort - mode %d - %.3f\n", m, seconds() - t0);
                 
-                t0 = seconds();
-                create_HCSR(arrX[m], Opt); 
+                // t0 = seconds();
+                if(m !=  redunMode)
+                    create_HCSR(arrX[m], Opt); 
                 // printf("creat CSF - mode %d - %.3f\n", m, seconds() - t0);
                 
                 // get_nnzPerFiberData(arrX[m]); //merge with createCSF
@@ -271,6 +310,8 @@ int main(int argc, char* argv[]){
             }       
         }
 
+        Opt.redunMode = redunMode;
+
         TiledTensor ModeWiseTiledX[X.ndims];
         t0 = seconds();
         //mm_partition_allMode(arrX, X, ModeWiseTiledX, Opt);
@@ -279,7 +320,7 @@ int main(int argc, char* argv[]){
         printf("mm_partition & populate - time: %.3f sec \n", seconds() - t0);
         
         t0 = seconds();
-        double start_time = omp_get_wtime();
+        // double start_time = omp_get_wtime();
         // omp_set_num_threads(X.ndims);
         // #pragma omp parallel 
         {
@@ -291,7 +332,7 @@ int main(int argc, char* argv[]){
                     sort_MI_CSF(X, ModeWiseTiledX, m);
                     create_TiledHCSR(ModeWiseTiledX, Opt, m);
                     create_fbrLikeSlcInds(ModeWiseTiledX, m);
-                    make_TiledBin(ModeWiseTiledX, Opt, m);
+                    // make_TiledBin(ModeWiseTiledX, Opt, m);
                     // cout << "printing " << m << endl;
                     // print_TiledCOO(ModeWiseTiledX, m);
                     // print_TiledHCSRtensor(ModeWiseTiledX, m);
@@ -300,9 +341,9 @@ int main(int argc, char* argv[]){
                 // cout << threadnum << " " << numthreads << endl;
             }
         }
-        double omp_time = omp_get_wtime() - start_time;
+        // double omp_time = omp_get_wtime() - start_time;
 
-        printf("Sort,createCSF,createFbrIND - time: %.3f sec, %g \n", seconds() - t0, omp_time);
+        // printf("Sort,createCSF,createFbrIND - time: %.3f sec \n", seconds() - t0);
 
         /* on CPU */
         if(Opt.impType == 11){ 
@@ -376,7 +417,7 @@ int main(int argc, char* argv[]){
             cout << "checking only the last mode. " << endl;
         // Opt.mode = 0;//X.modeOrder[2];
         // int MTTKRPmode = 2;
-        Opt.mode = ((Opt.impType == 12 || Opt.impType == 14 ) ?  X.ndims-1 : Opt.mode);
+        Opt.mode = X.ndims-1;//((Opt.impType == 12 || Opt.impType == 14 ) ?  X.ndims-1 : Opt.mode);
         int mode = Opt.mode;
         int nr = U[mode].nRows;  
         int nc = U[mode].nCols;
