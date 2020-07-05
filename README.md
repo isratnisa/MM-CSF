@@ -1,5 +1,5 @@
-MM-CSF or MixedMode-CSF is a storage-efficient representation for sparse tensors that enables high-performance, compressed and load-balanced execution of tensor kernels on GPUs. Currently, it supports MTTKRP kernel from CP decomposition. In future, we plan to extend it to support all generic sparse tensor kernels. Details can be found in the following links: 
-Paper:https://dl.acm.org/doi/abs/10.1145/3295500.3356216 
+MM-CSF or MixedMode-CSF is a storage-efficient representation for sparse tensors that enables high-performance, compressed and load-balanced execution of tensor kernels on GPUs. Currently, it supports MTTKRP kernel from CP decomposition. In future, we plan to extend it to support all generic sparse tensor kernels. Details can be found in the following links:  
+Paper:https://dl.acm.org/doi/abs/10.1145/3295500.3356216  
 Slides:http://sc19.supercomputing.org/proceedings/tech_paper/tech_paper_files/pap513s5.pdf
 
 ## Tensor format
