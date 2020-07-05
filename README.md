@@ -29,19 +29,20 @@ An example of a 3x3x3 tensor - toy.tns:
 
 
 ## Build 
-
-`$ make`  
+`$ cd src && make`  
 
 ## Run
 
 Example:
 
-mttkrp using COO format on CPU:  
-`$ ./mttkrp -i toy.tns -m 0 -R 32 -t 1 -f 128`  
-mttkrp using BCSF format on GPU:  
-`$ ./mttkrp -i toy.tns -m 0 -R 32 -t 8 -f 128`  
-mttkrp using MM-CSF format on GPU:  
-`$ ./mttkrp -i toy.tns -m 0 -R 32 -t 12 -f 128`  
+1.mttkrp using COO format on CPU:  
+`$ ./src/mttkrp -i toy.tns -m 0 -R 32 -t 1 -f 128`  
+
+2.mttkrp using BCSF format on GPU:  
+`$ ./src/mttkrp -i toy.tns -m 0 -R 32 -t 8 -f 128`  
+
+3.mttkrp using MM-CSF format on GPU:  
+`$ ./src/mttkrp -i toy.tns -m 0 -R 32 -t 12 -f 128`  
 
 To see all the options: 
   
