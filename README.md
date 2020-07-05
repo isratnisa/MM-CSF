@@ -36,7 +36,12 @@ An example of a 3x3x3 tensor - toy.tns:
 
 Example:
 
-`$ ./mttkrp -i toy.tns -m 0 -R 32 -t 1 -f 128`
+mttkrp using COO format on CPU:  
+`$ ./mttkrp -i toy.tns -m 0 -R 32 -t 1 -f 128`  
+mttkrp using BCSF format on GPU:  
+`$ ./mttkrp -i toy.tns -m 0 -R 32 -t 8 -f 128`  
+mttkrp using MM-CSF format on GPU:  
+`$ ./mttkrp -i toy.tns -m 0 -R 32 -t 12 -f 128`  
 
 To see all the options: 
   
@@ -44,8 +49,8 @@ To see all the options:
 ```
 options:   
         -R rank/feature : set the rank (default 32)  
-        -m mode : set the mode of MTTKRP (default 0)  
-        -t implementation type: 1: COO CPU, 2: HCSR CPU, 3: COO GPU 4: HCSR GPU 8: B-CSF 10: HB-CSF (default 1)   
+        -m mode : set the mode of MTTKRP (default 0, MMCSF evaluates all modes)  
+        -t implementation type: 1: COO CPU, 3: COO GPU 8: B-CSF 10: HB-CSF 12: MM-CSF on GPU (default 1)   
         -f fiber-splitting threshold: set the maximum length (nnz) for each fiber. Longer fibers will be split (default inf)  
         -w warp per slice: set number of WARPs assign to per slice  (default 4)  
         -i output file name: e.g., ../dataset/delicious.tns   
