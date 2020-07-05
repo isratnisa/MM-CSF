@@ -2,19 +2,23 @@ CXX=g++
 # CXX=icc
 NVCC=nvcc
 NVCC_LIB_PATH=/usr/lib/x86_64-linux-gnu
-# pitzer
-BOOSTFLAG=-L/apps/boost/intel/18.0/1.67.0/lib -I/apps/boost/intel/18.0/1.67.0/include 
-# BOOSTFLAG=-L/usr/local/boost/gnu/7.3/1.67.0/lib -I/usr/local/boost/gnu/7.3/1.67.0/include
+LAPACK_HOME=/users/PAS0134/osu1600/softwares/OpenBLAS
+# ri2
+BOOSTFLAG=-L/usr/local/boost/gnu/7.3/1.67.0/lib -I/home/nisa/Downloads/boost_1_69_0
 
-LAPACK_LIB_PATH=/users/PAS0134/osu1600/softwares/OpenBLAS/lib/
-LAPACK_INCLUDE_PATH=/users/PAS0134/osu1600/softwares/OpenBLAS/include/
+LAPACK_LIB_PATH=${LAPACK_HOME}/lib/
+LAPACK_INCLUDE_PATH=${LAPACK_HOME}/include/
 BLAS_INCLUDE_PATH=
 
 CXXFLAGS=-O3 -std=c++11 -fopenmp -I${LAPACK_INCLUDE_PATH} -I${BLAS_INCLUDE_PATH} -DADD_  $(BOOSTFLAG)
 CXXLINKFLAGS=-L${LAPACK_LIB_PATH} -lopenblas
 
-MPIFLAGS = -I/opt/mvapich2/intel/18.0/2.3/include
-MPILINKFLAGS=-L/opt/mvapich2/intel/18.0/2.3/lib -lmpi
+# ri2
+MPIFLAGS = -I/act/mvapich2-2.1/gcc/include
+MPILINKFLAGS=-L/act/mvapich2-2.1/gcc/lib -lmpi
+
+# MPIFLAGS = -I/opt/mvapich2/intel/18.0/2.3/include
+# MPILINKFLAGS=-L/opt/mvapich2/intel/18.0/2.3/lib -lmpi
 
 NVCCFLAGS += -O3 -w -gencode arch=compute_70,code=sm_70 -Xptxas -dlcm=ca -Xcompiler -fopenmp --std=c++11 -m64 -lineinfo $(BOOSTFLAG)  -I${LAPACK_INCLUDE_PATH} -I${BLAS_INCLUDE_PATH} -DADD_ 
 NVCCLINKFLAGS = -L$(NVCC_LIB_PATH) -lcudart
