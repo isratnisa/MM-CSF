@@ -73,9 +73,6 @@ class TiledTensor{
         ITYPE *denseSlcPtr;
         ITYPE *partPerNnz;
         ITYPE *totnnzPerPart;
-        ITYPE *mpiEndSlc; 
-        ITYPE *mpiEndFbr; 
-        ITYPE *mpiEndNnz; 
         ITYPE *nnzInRank;
         ITYPE *fbrInRank;
         ITYPE *slcInRank;
@@ -154,7 +151,6 @@ public:
     std::string m0 = "012";
     std::string m1 = "120";
     std::string m2 = "201";
-    bool useMPI = false;
     bool doCPD = false;
     ITYPE cpdIters = 10;
     bool natOrdering = false;
@@ -182,12 +178,6 @@ public:
             std::cout << "output file name = " << outFileName << '\n';
 
     }
-};
-
-class MPI_param{
-    public:
-        int mpi_rank, n_proc;
-
 };
 
 inline int check_opt(const Tensor &X, Options &Opt){

@@ -6,7 +6,6 @@
 #include <math.h> 
 #include <omp.h>
 #include <cuda.h>
-#include "mttkrp_mpi.h"
 #include "mttkrp_cpu.h"
 #include "mttkrp_gpu.h" 
 #include "cpd_cpu.h"
@@ -25,7 +24,6 @@ int main(int argc, char* argv[]){
     sort_COOtensor(X);
     // printf("Sort : %.3f sec \n", seconds() - t1); 
     check_opt(X, Opt); //check options are good
-    MPI_param MPIparam;
     
     TiledTensor TiledX[Opt.nTile];
       
@@ -253,7 +251,7 @@ int main(int argc, char* argv[]){
         double t0 = seconds();
 
         if(Opt.verbose)
-            cout << "Starting MI-CSF" << endl;
+            cout << "Starting MM-CSF" << endl;
 
         /*Collect slice and fiber stats: Create CSF for all modes*/
         bool slcNfbrStats = true;
@@ -377,21 +375,7 @@ int main(int argc, char* argv[]){
         
         /* on GPU */
         else if(Opt.impType == 12){ 
-
-            if(Opt.useMPI){
-               
-                start_mpi(MPIparam);
-                cout << "MTTKRP on " << MPIparam.n_proc <<" GPUs. " << endl;
-                for (int m = 0; m < X.ndims; ++m){
-                    if(ModeWiseTiledX[m].totNnz)
-                        create_mpi_partition(ModeWiseTiledX, m, MPIparam);
-                }
-                MTTKRP_MIHCSR_multiGPU(ModeWiseTiledX, U, Opt, MPIparam);
-                end_mpi();
-            }
-            else
-
-                MTTKRP_MIHCSR_GPU(ModeWiseTiledX, U, Opt);
+            MTTKRP_MIHCSR_GPU(ModeWiseTiledX, U, Opt);
 
         }
         // printf("MIHCSR incl CPU - time: %.3f sec \n", seconds() - t0);
@@ -409,10 +393,7 @@ int main(int argc, char* argv[]){
             cout << "Already running COO seq on CPU!" << endl; 
             exit(0);
         }
-        if(Opt.useMPI){
-            if(MPIparam.mpi_rank > 0)
-                return 0;
-        }
+
         if(Opt.verbose && (Opt.impType == 12 || Opt.impType == 14))
             cout << "checking only the last mode. " << endl;
         // Opt.mode = 0;//X.modeOrder[2];

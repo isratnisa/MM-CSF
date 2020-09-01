@@ -25,11 +25,11 @@ An example of a 3x3x3 tensor - toy.tns:
 - CUDA SDK
 - Boost C++
 - OpenMP
-- mvapich or openmpi
 - LAPACK
 
 
-## Build 
+## Build
+Set LAPACK\_HOME path in the Makefile.   
 `$ cd src && make`  
 
 ## Run

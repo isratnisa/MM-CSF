@@ -13,13 +13,6 @@ BLAS_INCLUDE_PATH=
 CXXFLAGS=-O3 -std=c++11 -fopenmp -I${LAPACK_INCLUDE_PATH} -I${BLAS_INCLUDE_PATH} -DADD_  $(BOOSTFLAG)
 CXXLINKFLAGS=-L${LAPACK_LIB_PATH} -lopenblas
 
-# ri2
-MPIFLAGS = -I/act/mvapich2-2.1/gcc/include
-MPILINKFLAGS=-L/act/mvapich2-2.1/gcc/lib -lmpi
-
-# MPIFLAGS = -I/opt/mvapich2/intel/18.0/2.3/include
-# MPILINKFLAGS=-L/opt/mvapich2/intel/18.0/2.3/lib -lmpi
-
 NVCCFLAGS += -O3 -w -gencode arch=compute_70,code=sm_70 -Xptxas -dlcm=ca -Xcompiler -fopenmp --std=c++11 -m64 -lineinfo $(BOOSTFLAG)  -I${LAPACK_INCLUDE_PATH} -I${BLAS_INCLUDE_PATH} -DADD_ 
 NVCCLINKFLAGS = -L$(NVCC_LIB_PATH) -lcudart
 # nvcc -ccbin=/cm/shared/apps/intel/compilers_and_libraries_2016.3.210/linux/bin/intel64/icc -std=c++11 -o t912 t912.cu
@@ -32,10 +25,10 @@ ttm: ttm.cu ttm_cpu.o ttm_gpu.o
 	${NVCC} ${NVCCFLAGS} -o ttm ttm_cpu.o ttm_gpu.o ttm.cu $(NVCCLINKFLAGS)  
 
 mttkrp: mttkrp.cu mttkrp_cpu.o mttkrp_gpu.o cpd_cpu.o clapack.h
-	${NVCC} ${NVCCFLAGS} ${MPIFLAGS} ${MPILINKFLAGS} -o mttkrp mttkrp_cpu.o mttkrp_gpu.o cpd_cpu.o mttkrp.cu $(NVCCLINKFLAGS) ${CXXLINKFLAGS} 
+	${NVCC} ${NVCCFLAGS} -o mttkrp mttkrp_cpu.o mttkrp_gpu.o cpd_cpu.o mttkrp.cu $(NVCCLINKFLAGS) ${CXXLINKFLAGS} 
 
-mttkrp_gpu.o: mttkrp_gpu.h mttkrp_gpu.cu util.h mttkrp_mpi.h
-	${NVCC} ${NVCCFLAGS} ${MPIFLAGS} ${MPILINKFLAGS} -c -o mttkrp_gpu.o mttkrp_gpu.cu $(NVCCLINKFLAGS)  
+mttkrp_gpu.o: mttkrp_gpu.h mttkrp_gpu.cu util.h 
+	${NVCC} ${NVCCFLAGS} -c -o mttkrp_gpu.o mttkrp_gpu.cu $(NVCCLINKFLAGS)  
 
 mttkrp_cpu.o: mttkrp_cpu.h mttkrp_cpu.cpp util.h
 	${CXX} ${CXXFLAGS} -c -o mttkrp_cpu.o mttkrp_cpu.cpp
